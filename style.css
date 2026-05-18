@@ -1,0 +1,19 @@
+/* Rimuove i margini predefiniti del browser */
+body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden; /* Nasconde le barre di scorrimento */
+    background-color: #000; /* Colore di sfondo se il gioco non copre tutto */
+}
+
+/* Gestisce il canvas di Three.js */
+canvas {
+    display: block; /* Evita lo spazio bianco sotto il canvas */
+    width: 100vw;
+    height: 100vh;
+}
+
+#game-container {
+    width: 100%;
+    height: 100%;
+}
