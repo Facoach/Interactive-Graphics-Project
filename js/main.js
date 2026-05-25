@@ -14,9 +14,9 @@ let platforms = [];
 let walls = [];
 let door;
 let starMaterial;
-let planet, planet2;
+let planet, planet2, planet3, planet4;
 let sunMesh;
-let sunPivot1, sunPivot2; // Due perni separati per i due pianeti
+let sunPivot1, sunPivot2, sunPivot3, sunPivot4; // 4 perni separati per i 4 pianeti
 let sunPointLight;
 let solarFlares;
 let moonPivot, moon;
@@ -560,7 +560,7 @@ function createWorld() {
     sunPointLight.shadow.normalBias = 0.002; 
     sunMesh.add(sunPointLight);
 
-    // 3. CREAZIONE DEI DUE PIVOT NELLO STESSO PUNTO DEL SOLE
+    // 3. CREAZIONE DEI PIVOT NELLO STESSO PUNTO DEL SOLE
     sunPivot1 = new THREE.Group();
     sunPivot1.position.copy(sunPosition);
     scene.add(sunPivot1);
@@ -568,6 +568,14 @@ function createWorld() {
     sunPivot2 = new THREE.Group();
     sunPivot2.position.copy(sunPosition);
     scene.add(sunPivot2);
+
+    sunPivot3 = new THREE.Group();
+    sunPivot3.position.copy(sunPosition);
+    scene.add(sunPivot3);
+
+    sunPivot4 = new THREE.Group();
+    sunPivot4.position.copy(sunPosition);
+    scene.add(sunPivot4);
 
     // 2. LE FIAMME SOLARI (Tempesta di particelle)
     const flareGeo = new THREE.BufferGeometry();
@@ -604,7 +612,7 @@ function createWorld() {
     //PLANETS
     loader.load('./models/Planet2.glb', (gltf) => {
         planet2 = gltf.scene;
-        planet2.scale.set(3.5, 3.5, 3.5);
+        planet2.scale.set(5, 5, 5);
         planet2.castShadow = true;
         planet2.receiveShadow = true;
 
@@ -617,7 +625,7 @@ function createWorld() {
         // --- SPOSTIAMO QUI IL CARICAMENTO DELLA LUNA ---
         loader.load('./models/Moon.glb', (gltf) => {
             moon = gltf.scene;
-            moon.scale.set(0.2, 0.2, 0.2);
+            moon.scale.set(0.5, 0.5, 0.5);
             moon.castShadow = true;
             moon.receiveShadow = true;
 
@@ -641,7 +649,7 @@ function createWorld() {
         planet = gltf.scene;
         planet.scale.set(4, 4, 4); 
         // Posizioniamo il pianeta
-        planet.position.set(-100, -30, 20);
+        planet.position.set(-150, -20, 30);
         // Rendiamo il modello capace di proiettare ombre
         planet.castShadow = true;
         planet.receiveShadow = true;
@@ -649,6 +657,52 @@ function createWorld() {
         //inclinazione asse
         planet.rotation.z = 0.41;
         sunPivot1.add(planet);
+
+        console.log("Modello caricato correttamente");
+    }, undefined, (error) => {
+        console.error("Errore nel caricamento del modello:", error);
+    });
+
+    loader.load('./models/Planet3.glb', (gltf) => {
+        planet3 = gltf.scene;
+        planet3.scale.set(2, 2, 2); 
+        // Posizioniamo il pianeta
+        planet3.position.set(-150, 10, 50);
+        // Rendiamo il modello capace di proiettare ombre
+        planet3.castShadow = true;
+        planet3.receiveShadow = true;
+
+        // --- AGGIUNTA DELLA POINTLIGHT VIOLA ---
+        // Argomenti: (colore esadecimale, intensità, distanza massima della luce)
+        const coreLight = new THREE.PointLight(0x9900ff, 15, 40); 
+        // Posizione 0,0,0 significa "esattamente nel centro del pianeta"
+        coreLight.position.set(0, 0, 0); 
+        // Se vuoi che i frammenti proiettino ombre sui muri o sulla mappa grazie a questa luce:
+        coreLight.castShadow = true; 
+        // Regoliamo il bilanciamento dell'ombra per evitare artefatti grafici (opzionale ma consigliato)
+        coreLight.shadow.bias = -0.002; 
+        // Agganciamo la luce direttamente AL PIANETA
+        planet3.add(coreLight);
+
+        sunPivot3.add(planet3);
+
+        console.log("Modello caricato correttamente");
+    }, undefined, (error) => {
+        console.error("Errore nel caricamento del modello:", error);
+    });
+
+    loader.load('./models/Planet4.glb', (gltf) => {
+        planet4 = gltf.scene;
+        planet4.scale.set(4, 4, 4); 
+        // Posizioniamo il pianeta
+        planet4.position.set(100, 0, 40);
+        // Rendiamo il modello capace di proiettare ombre
+        planet4.castShadow = true;
+        planet4.receiveShadow = true;
+
+        //inclinazione asse
+        planet4.rotation.z = 0.41;
+        sunPivot4.add(planet4);
 
         console.log("Modello caricato correttamente");
     }, undefined, (error) => {
@@ -924,10 +978,18 @@ function animate() {
     if (sunPivot2) {
         sunPivot2.rotation.y += 0.0004; // Pianeta 2 più lento (orbita esterna)
     }
+    if (sunPivot3) {
+        sunPivot3.rotation.y += 0.0005; // Pianeta 3 più lento (orbita esterna)
+    }
+    if (sunPivot4) {
+        sunPivot4.rotation.y += 0.0007; // Pianeta 4 più lento (orbita esterna)
+    }
 
     // 3. I pianeti ruotano sul proprio asse
     if (planet) planet.rotation.y += 0.005;
     if (planet2) planet2.rotation.y += 0.003;
+    if (planet3) planet3.rotation.y += 0.008;
+    if (planet4) planet4.rotation.y += 0.003;
 
     // 4. La luna gira attorno al pianeta 2 
     if (moonPivot) {
