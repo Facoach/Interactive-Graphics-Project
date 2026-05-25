@@ -41,6 +41,7 @@ let buttonInitialPos = null;
 let isButtonAnimating = false; // Impedisce lo spam del tasto F durante il movimento
 
 let blackHoleGroup, outerDisk, innerDisk;
+let galaxy;
 
 const promptUI = document.getElementById('interaction-prompt');
 
@@ -93,6 +94,74 @@ function createStars() {
     scene.add(stars);
     
     return stars; // Lo restituiamo se vogliamo farlo ruotare dopo
+}
+
+function createGalaxy() {
+    const particleCount = 15000; // Numero di stelle nella galassia
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(particleCount * 3);
+    const colors = new Float32Array(particleCount * 3);
+
+    // Parametri della galassia
+    const arms = 3;             // Numero di bracci della spirale
+    const galaxyRadius = 80;    // Raggio della galassia
+    const coreColor = new THREE.Color('#ffe6aa'); // Centro caldo (giallo/bianco)
+    const armColor = new THREE.Color('#ff00aa');  // Bracci freddi (viola/magenta)
+
+    for (let i = 0; i < particleCount; i++) {
+        // 1. POSIZIONE
+        // Distanza dal centro (più stelle vicino al centro, meno fuori)
+        const radius = Math.random() * galaxyRadius * Math.pow(Math.random(), 2);
+        
+        // Calcolo dell'angolo per creare l'effetto spirale (Bracci)
+        const armAngle = ((i % arms) / arms) * Math.PI * 2;
+        const spinAngle = radius * 0.1; // Determina quanto si "avvolge" la spirale
+
+        // Casualità per dare spessore ai bracci (effetto nuvola)
+        const randomX = (Math.pow(Math.random(), 3) * (Math.random() < 0.5 ? 1 : -1)) * (radius * 0.1);
+        const randomY = (Math.pow(Math.random(), 3) * (Math.random() < 0.5 ? 1 : -1)) * (radius * 0.05); // Più piatta sull'asse Y
+        const randomZ = (Math.pow(Math.random(), 3) * (Math.random() < 0.5 ? 1 : -1)) * (radius * 0.1);
+
+        const i3 = i * 3;
+        positions[i3]     = Math.cos(armAngle + spinAngle) * radius + randomX;
+        positions[i3 + 1] = randomY; // Altezza della galassia
+        positions[i3 + 2] = Math.sin(armAngle + spinAngle) * radius + randomZ;
+
+        // 2. COLORE (Sfumatura dal nucleo ai bracci)
+        const mixedColor = coreColor.clone();
+        // Sfumiamo tra il colore del nucleo e quello dei bracci in base alla distanza
+        mixedColor.lerp(armColor, radius / galaxyRadius);
+
+        colors[i3]     = mixedColor.r;
+        colors[i3 + 1] = mixedColor.g;
+        colors[i3 + 2] = mixedColor.b;
+    }
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    // Materiale delle singole stelle della galassia
+    const material = new THREE.PointsMaterial({
+        size: 0.2,
+        vertexColors: true, // Dice a Three.js di usare i colori calcolati sopra
+        transparent: true,
+        opacity: 0.6,
+        blending: THREE.AdditiveBlending, // Illumina fondendo le particelle al centro
+        depthWrite: false, // Impedisce alle particelle di coprirsi a vicenda con quadrati neri
+        fog: false // Non viene cancellata dalla nebbia di gioco
+    });
+
+    galaxy = new THREE.Points(geometry, material);
+    
+    // Posizioniamo la galassia LONTANISSIMA nel cielo
+    // Scegli coordinate molto grandi (es. x: 500, y: 300, z: -600)
+    galaxy.position.set(-800, 400, -400);
+    
+    // Ruotiamola leggermente per vederla "di taglio/in diagonale" (più suggestiva)
+    galaxy.rotation.x = 0.6;
+    galaxy.rotation.z = 0.2;
+
+    scene.add(galaxy);
 }
 
 // --- LOGICA DI ILLUMINAZIONE FISICA ---
@@ -623,7 +692,7 @@ function createWorld() {
         sunPivot2.add(planet2);
 
         // --- SPOSTIAMO QUI IL CARICAMENTO DELLA LUNA ---
-        loader.load('./models/moon.glb', (gltf) => {
+        loader.load('./models/Moon.glb', (gltf) => {
             moon = gltf.scene;
             moon.scale.set(0.5, 0.5, 0.5);
             moon.castShadow = true;
@@ -775,6 +844,8 @@ function createWorld() {
     blackHoleGroup.add(innerDisk);
 
     scene.add(blackHoleGroup);
+
+    createGalaxy();
 }
 
 
@@ -1003,6 +1074,10 @@ function animate() {
     }
     if (innerDisk) {
         innerDisk.rotation.z -= 0.015; // Molto più veloce!
+    }
+
+    if (galaxy) {
+        galaxy.rotation.y += 0.0002; // Rotazione impercettibile e maestosa
     }
 
 
