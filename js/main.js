@@ -623,7 +623,7 @@ function createWorld() {
         sunPivot2.add(planet2);
 
         // --- SPOSTIAMO QUI IL CARICAMENTO DELLA LUNA ---
-        loader.load('./models/Moon.glb', (gltf) => {
+        loader.load('./models/moon.glb', (gltf) => {
             moon = gltf.scene;
             moon.scale.set(0.5, 0.5, 0.5);
             moon.castShadow = true;
