@@ -15,6 +15,10 @@ let walls = [];
 let door;
 let starMaterial;
 let planet, planet2;
+let sunMesh;
+let sunPivot1, sunPivot2; // Due perni separati per i due pianeti
+let sunPointLight;
+let solarFlares;
 let moonPivot, moon;
 let crystal1, crystal2;
 let leftArm, rightArm, leftLeg, rightLeg;
@@ -36,11 +40,14 @@ let movingButton = null;
 let buttonInitialPos = null;
 let isButtonAnimating = false; // Impedisce lo spam del tasto F durante il movimento
 
+let blackHoleGroup, outerDisk, innerDisk;
+
+const promptUI = document.getElementById('interaction-prompt');
+
 // Funzione Init
 function init() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x020205);
-    scene.fog = new THREE.Fog(0x020205, 50, 60);
 
     // Texture Loader (Project 3)
     textureLoader = new THREE.TextureLoader();
@@ -72,7 +79,7 @@ function createStars() {
     });
 
     const starVertices = [];
-    for (let i = 0; i < 5000; i++) {
+    for (let i = 0; i < 3000; i++) {
         // Creiamo posizioni casuali in un raggio molto ampio (es. tra -500 e 500)
         const x = (Math.random() - 0.5) * 500;
         const y = (Math.random() - 0.5) * 500;
@@ -525,71 +532,129 @@ function createWorld() {
     addPlatform(5, 2, -42, 2, 2, floorTex, false, 'light-only');
     addPlatform(0, 2.5, -50, 6, 6, floorTex);
 
+
+    // --- IL SOLE ---
+
+    // Posizioniamo il Sole lontano nel cielo
+    const sunPosition = new THREE.Vector3(180, 80, -250); 
+
+    // Geometria più grande (raggio 25) perché è molto distante
+    const sunGeo = new THREE.SphereGeometry(25, 32, 32); 
+    const sunMat = new THREE.MeshStandardMaterial({
+        color: 0xffaa00,           
+        emissive: 0xff5500,        
+        emissiveIntensity: 2.5,    
+        wireframe: false,
+        fog: false // Immune alla nebbia
+    });
+    sunMesh = new THREE.Mesh(sunGeo, sunMat);
+    sunMesh.position.copy(sunPosition);
+    scene.add(sunMesh);
+
+    // 2. Luce del sole
+    sunPointLight = new THREE.PointLight(0xffaa00, 2.0, 600); 
+    sunPointLight.castShadow = true;
+    sunPointLight.shadow.mapSize.width = 2048; 
+    sunPointLight.shadow.mapSize.height = 2048;
+    sunPointLight.shadow.bias = -0.0001; 
+    sunPointLight.shadow.normalBias = 0.002; 
+    sunMesh.add(sunPointLight);
+
+    // 3. CREAZIONE DEI DUE PIVOT NELLO STESSO PUNTO DEL SOLE
+    sunPivot1 = new THREE.Group();
+    sunPivot1.position.copy(sunPosition);
+    scene.add(sunPivot1);
+
+    sunPivot2 = new THREE.Group();
+    sunPivot2.position.copy(sunPosition);
+    scene.add(sunPivot2);
+
+    // 2. LE FIAMME SOLARI (Tempesta di particelle)
+    const flareGeo = new THREE.BufferGeometry();
+    const flareCount = 600; // Quante fiammelle/scintille vuoi
+    const flarePositions = new Float32Array(flareCount * 3);
+
+    for(let i = 0; i < flareCount * 3; i += 3) {
+        // Matematica per distribuire le particelle casualmente su una sfera
+        const u = Math.random();
+        const v = Math.random();
+        const theta = 2 * Math.PI * u;
+        const phi = Math.acos(2 * v - 1);
+    
+        // Distanza casuale dal centro (tra la superficie a 25 e l'atmosfera a 29)
+        const r = 22.5 + Math.random() * 4; 
+
+        flarePositions[i] = r * Math.sin(phi) * Math.cos(theta);     // Asse X
+        flarePositions[i+1] = r * Math.sin(phi) * Math.sin(theta);   // Asse Y
+        flarePositions[i+2] = r * Math.cos(phi);                     // Asse Z
+    }
+
+    flareGeo.setAttribute('position', new THREE.BufferAttribute(flarePositions, 3));
+    const flareMat = new THREE.PointsMaterial({
+        color: 0xffaa00,
+        size: 0.8,                 // Grandezza delle scintille
+        transparent: true,
+        opacity: 0.8,
+        blending: THREE.AdditiveBlending,
+        fog: false
+    });
+    solarFlares = new THREE.Points(flareGeo, flareMat);
+    sunMesh.add(solarFlares); // Agganciamo anche le particelle al sole
+
     //PLANETS
     loader.load('./models/Planet2.glb', (gltf) => {
         planet2 = gltf.scene;
-        planet2.scale.set(2, 2, 2); 
-        // Posizioniamo il pianeta
-        planet2.position.set(-30, 10, -50);
-        // Rendiamo il modello capace di proiettare ombre
+        planet2.scale.set(3.5, 3.5, 3.5);
         planet2.castShadow = true;
         planet2.receiveShadow = true;
 
-        //inclinazione asse
-        planet2.rotation.z = 3.60;
-        scene.add(planet2);
+        // Distanza dal sole (es: 150 unità a destra, su un'orbita più larga)
+        planet2.position.set(150, -10, -10); 
+    
+        // Agganciamo il Pianeta 2 al secondo Pivot del sole
+        sunPivot2.add(planet2);
 
-        console.log("Modello caricato correttamente");
-    }, undefined, (error) => {
-        console.error("Errore nel caricamento del modello:", error);
+        // --- SPOSTIAMO QUI IL CARICAMENTO DELLA LUNA ---
+        loader.load('./models/Moon.glb', (gltf) => {
+            moon = gltf.scene;
+            moon.scale.set(0.2, 0.2, 0.2);
+            moon.castShadow = true;
+            moon.receiveShadow = true;
+
+            // Creiamo il perno della luna
+            moonPivot = new THREE.Group();
+        
+            // IMPORTANTE: Mettiamo il perno della luna a (0,0,0) LOCALI del pianeta
+            moonPivot.position.set(0, 0, 0); 
+        
+            // Allontaniamo la luna dal suo perno
+            moon.position.set(2, 0, 0); 
+        
+            moonPivot.add(moon);
+        
+            // TRUCCO: Aggiungiamo il perno della luna DENTRO al pianeta 2!
+            planet2.add(moonPivot); 
+        });
     });
 
     loader.load('./models/Planet.glb', (gltf) => {
         planet = gltf.scene;
         planet.scale.set(4, 4, 4); 
         // Posizioniamo il pianeta
-        planet.position.set(40, 10, -30);
+        planet.position.set(-100, -30, 20);
         // Rendiamo il modello capace di proiettare ombre
         planet.castShadow = true;
         planet.receiveShadow = true;
 
         //inclinazione asse
         planet.rotation.z = 0.41;
-        scene.add(planet);
+        sunPivot1.add(planet);
 
         console.log("Modello caricato correttamente");
     }, undefined, (error) => {
         console.error("Errore nel caricamento del modello:", error);
     });
 
-    loader.load('./models/moon.glb', (gltf) => {
-        moon = gltf.scene;
-        moon.scale.set(0.4, 0.4, 0.4); // Rendila piccola rispetto al pianeta
-
-        // Abilita le ombre per la luna
-        moon.traverse((node) => {
-            if (node.isMesh) {
-                node.castShadow = true;
-                node.receiveShadow = true;
-            }
-        });
-
-        // 1. Creiamo il Pivot (il punto centrale dell'orbita)
-        moonPivot = new THREE.Group();
-        // Lo posizioniamo ESATTAMENTE dove si trova il pianeta (es. planet2)
-        moonPivot.position.set(-30, 10, -50); 
-        scene.add(moonPivot);
-
-        // 2. Allontaniamo la luna dal centro del pianeta
-        moon.position.set(6, 0, 0); // 6 unità di distanza orbitale
-
-        // 3. Aggiungiamo la luna al PIVOT, non alla scena
-        moonPivot.add(moon);
-    
-        console.log("Luna caricata correttamente");
-    }, undefined, (error) => {
-        console.error("Errore nel caricamento della luna:", error);
-    });
     /*
     loader.load('./models/Reactor.glb', (gltf) => {
         const model = gltf.scene;
@@ -614,6 +679,48 @@ function createWorld() {
         console.error("Errore nel caricamento del modello:", error);
     });
     */
+
+    // --- IL BUCO NERO ---
+    blackHoleGroup = new THREE.Group();
+    // Posizionalo esattamente sotto la stanza iniziale, molto in profondità
+    blackHoleGroup.position.set(0, -200, 0); 
+
+    // 1. L'Orizzonte degli Eventi (La sfera nera)
+    // Usiamo MeshBasicMaterial perché non deve essere illuminata: deve essere il vuoto assoluto
+    const bhGeo = new THREE.SphereGeometry(40, 32, 32);
+    const bhMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    const blackHole = new THREE.Mesh(bhGeo, bhMat);
+    blackHoleGroup.add(blackHole);
+
+    // 2. Il Disco di Accrescimento Esterno (L'alone più scuro)
+    const outerDiskGeo = new THREE.RingGeometry(45, 100, 64);
+    const outerDiskMat = new THREE.MeshBasicMaterial({
+        color: 0x4400aa,           // Un viola/blu profondo (cambialo in arancione se preferisci!)
+        side: THREE.DoubleSide,    // Visibile sia da sopra che da sotto
+        transparent: true,
+        opacity: 0.4,
+        blending: THREE.AdditiveBlending, // La luce si somma
+        fog: false                 // Non sparisce nella nebbia
+    });
+    outerDisk = new THREE.Mesh(outerDiskGeo, outerDiskMat);
+    outerDisk.rotation.x = Math.PI / 2; // Lo sdraiamo in orizzontale
+    blackHoleGroup.add(outerDisk);
+
+    // 3. Il Disco di Accrescimento Interno (L'anello più luminoso e veloce vicino alla sfera)
+    const innerDiskGeo = new THREE.RingGeometry(41, 55, 64);
+    const innerDiskMat = new THREE.MeshBasicMaterial({
+        color: 0x88bbff,           // Un azzurro/bianco incandescente
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.8,
+        blending: THREE.AdditiveBlending,
+        fog: false
+    });
+    innerDisk = new THREE.Mesh(innerDiskGeo, innerDiskMat);
+    innerDisk.rotation.x = Math.PI / 2;
+    blackHoleGroup.add(innerDisk);
+
+    scene.add(blackHoleGroup);
 }
 
 
@@ -798,17 +905,56 @@ function animate() {
     if (crystal1) crystal1.position.y = 2 + Math.sin(currenttime) * 17;
     if (crystal2) crystal2.position.y = 2 + Math.sin(currenttime) * 17;
 
-    // ROTAZIONE PIANETI
+
+    // 1. Il Sole ruota lentamente su se stesso
+    if (sunMesh) {
+        sunMesh.rotation.y += 0.0005;
+
+        // Animazione delle fiamme (Le particelle turbinano veloci)
+        if (solarFlares) {
+            solarFlares.rotation.y -= 0.0015; 
+            solarFlares.rotation.x += 0.0008;
+        }
+    }
+
+    // 2. I due pianeti orbitano attorno al sole a velocità differenti
+    if (sunPivot1) {
+        sunPivot1.rotation.y += 0.001;  // Pianeta 1 più veloce (orbita interna)
+    }
+    if (sunPivot2) {
+        sunPivot2.rotation.y += 0.0004; // Pianeta 2 più lento (orbita esterna)
+    }
+
+    // 3. I pianeti ruotano sul proprio asse
     if (planet) planet.rotation.y += 0.005;
-    if (planet2) planet2.rotation.y += 0.02;
+    if (planet2) planet2.rotation.y += 0.003;
 
+    // 4. La luna gira attorno al pianeta 2 
     if (moonPivot) {
-        moonPivot.rotation.y += 0.015; // Questa è la velocità dell'orbita attorno al pianeta
-    }
-    if (moon) {
-        moon.rotation.y += 0.02; // Questa fa ruotare la luna sul suo stesso asse
+        moonPivot.rotation.y += 0.015;
     }
 
+    // ROTAZIONE DEL BUCO NERO
+    if (outerDisk) {
+        // Ruotano sull'asse Z perché li abbiamo "sdraiati" ruotando l'asse X a 90 gradi
+        outerDisk.rotation.z -= 0.005; 
+    }
+    if (innerDisk) {
+        innerDisk.rotation.z -= 0.015; // Molto più veloce!
+    }
+
+
+
+    // UI
+    if (buttonSwitch && player && promptUI) {
+        const distanceToButton = player.position.distanceTo(buttonSwitch.position);
+        
+        if (distanceToButton < 3) {
+            promptUI.style.display = 'block'; // Mostra il suggerimento a schermo
+        } else {
+            promptUI.style.display = 'none';  // Nasconde il suggerimento
+        }
+    }
     updateSensors();
     updateSpecialPlatforms();
     renderer.render(scene, camera);
