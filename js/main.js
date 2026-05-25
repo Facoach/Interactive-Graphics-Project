@@ -40,8 +40,9 @@ let movingButton = null;
 let buttonInitialPos = null;
 let isButtonAnimating = false; // Impedisce lo spam del tasto F durante il movimento
 
-let blackHoleGroup, outerDisk, innerDisk;
+let blackHoleGroup, accretionDisk;
 let galaxy;
+
 
 const promptUI = document.getElementById('interaction-prompt');
 
@@ -80,12 +81,16 @@ function createStars() {
     });
 
     const starVertices = [];
-    for (let i = 0; i < 3000; i++) {
+    for (let i = 0; i < 3200; i++) {
         // Creiamo posizioni casuali in un raggio molto ampio (es. tra -500 e 500)
         const x = (Math.random() - 0.5) * 500;
         const y = (Math.random() - 0.5) * 500;
         const z = (Math.random() - 0.5) * 500;
-        starVertices.push(x, y, z);
+        //Escludiamo le stelle troppo vicine alla stanza
+        if (x > -50 && x < 50 && y > -200 && y < 50 && z > -50 && z < 50) {
+        } else{
+            starVertices.push(x, y, z);
+        }
     }
 
     starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
@@ -808,40 +813,66 @@ function createWorld() {
     // Posizionalo esattamente sotto la stanza iniziale, molto in profondità
     blackHoleGroup.position.set(0, -200, 0); 
 
-    // 1. L'Orizzonte degli Eventi (La sfera nera)
-    // Usiamo MeshBasicMaterial perché non deve essere illuminata: deve essere il vuoto assoluto
+    // 1. L'Orizzonte degli Eventi (La sfera nera del nulla)
     const bhGeo = new THREE.SphereGeometry(40, 32, 32);
     const bhMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
     const blackHole = new THREE.Mesh(bhGeo, bhMat);
     blackHoleGroup.add(blackHole);
 
-    // 2. Il Disco di Accrescimento Esterno (L'alone più scuro)
-    const outerDiskGeo = new THREE.RingGeometry(45, 100, 64);
-    const outerDiskMat = new THREE.MeshBasicMaterial({
-        color: 0x4400aa,           // Un viola/blu profondo (cambialo in arancione se preferisci!)
-        side: THREE.DoubleSide,    // Visibile sia da sopra che da sotto
-        transparent: true,
-        opacity: 0.4,
-        blending: THREE.AdditiveBlending, // La luce si somma
-        fog: false                 // Non sparisce nella nebbia
-    });
-    outerDisk = new THREE.Mesh(outerDiskGeo, outerDiskMat);
-    outerDisk.rotation.x = Math.PI / 2; // Lo sdraiamo in orizzontale
-    blackHoleGroup.add(outerDisk);
+    // 2. Il Disco di Accrescimento (Sistema di Particelle Attivo)
+    const particleCount = 10000; // 10.000 frammenti di materia!
+    const diskGeo = new THREE.BufferGeometry();
+    const positions = new Float32Array(particleCount * 3);
+    const colors = new Float32Array(particleCount * 3);
 
-    // 3. Il Disco di Accrescimento Interno (L'anello più luminoso e veloce vicino alla sfera)
-    const innerDiskGeo = new THREE.RingGeometry(41, 55, 64);
-    const innerDiskMat = new THREE.MeshBasicMaterial({
-        color: 0x88bbff,           // Un azzurro/bianco incandescente
-        side: THREE.DoubleSide,
+    const innerRadius = 42; // Appena fuori dalla sfera nera
+    const outerRadius = 130; // Fin dove si estende il disco
+
+    // Colori termici: caldissimo al centro, freddo ai bordi
+    const hotColor = new THREE.Color(0xffffff); // Bianco/Giallo incandescente
+    const coldColor = new THREE.Color(0xaa1100); // Viola profondo
+
+    for (let i = 0; i < particleCount; i++) {
+        // Distribuiamo le particelle. La formula "Math.pow" concentra più polvere vicino al centro
+        const r = innerRadius + Math.pow(Math.random(), 3) * (outerRadius - innerRadius);
+        const theta = Math.random() * Math.PI * 2;
+
+        // Variazione sull'asse Y per dare spessore al disco
+        // Più le particelle sono vicine al centro, più il disco è sottile e schiacciato dalla gravità
+        const yThickness = (Math.random() - 0.5) * (800 / r); 
+
+        const i3 = i * 3;
+        positions[i3] = Math.cos(theta) * r;
+        positions[i3 + 1] = yThickness; 
+        positions[i3 + 2] = Math.sin(theta) * r;
+
+        // Sfumatura di colore in base alla distanza
+        const mixedColor = hotColor.clone();
+        mixedColor.lerp(coldColor, (r - innerRadius) / (outerRadius - innerRadius));
+
+        colors[i3] = mixedColor.r;
+        colors[i3 + 1] = mixedColor.g;
+        colors[i3 + 2] = mixedColor.b;
+    }
+
+    diskGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    diskGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const diskMat = new THREE.PointsMaterial({
+        size: 0.6,
+        vertexColors: true,
         transparent: true,
         opacity: 0.8,
-        blending: THREE.AdditiveBlending,
+        blending: THREE.AdditiveBlending, // La luce si somma rendendo il centro abbagliante
+        depthWrite: false, // LA MAGIA ANTI-COMPENETRAZIONE! Ora i bordi non "tagliano" la sfera.
         fog: false
     });
-    innerDisk = new THREE.Mesh(innerDiskGeo, innerDiskMat);
-    innerDisk.rotation.x = Math.PI / 2;
-    blackHoleGroup.add(innerDisk);
+
+    accretionDisk = new THREE.Points(diskGeo, diskMat);
+    
+    // Incliniamo leggermente l'intero buco nero per un effetto più cinematografico
+    blackHoleGroup.rotation.z = 0.2; 
+    blackHoleGroup.add(accretionDisk);
 
     scene.add(blackHoleGroup);
 
@@ -1068,19 +1099,39 @@ function animate() {
     }
 
     // ROTAZIONE DEL BUCO NERO
-    if (outerDisk) {
-        // Ruotano sull'asse Z perché li abbiamo "sdraiati" ruotando l'asse X a 90 gradi
-        outerDisk.rotation.z -= 0.005; 
-    }
-    if (innerDisk) {
-        innerDisk.rotation.z -= 0.015; // Molto più veloce!
+    if (accretionDisk) {
+        // Estraiamo l'array con le posizioni (X, Y, Z) di tutte le 10.000 particelle
+        const positions = accretionDisk.geometry.attributes.position.array;
+        
+        // Cicliamo attraverso tutte le particelle
+        for (let i = 0; i < positions.length; i += 3) {
+            const x = positions[i];
+            const z = positions[i + 2]; // La Y non la tocchiamo (i + 1)
+            
+            // 1. Calcoliamo la distanza attuale di questa particella dal centro (Teorema di Pitagora)
+            const r = Math.sqrt(x * x + z * z);
+            
+            // 2. Fisica reale (Keplero): la velocità angolare aumenta DRASTICAMENTE vicino al centro.
+            // Il numero 12 è il "moltiplicatore di velocità". Alzalo (es. 20) per renderlo più rapido!
+            const speed = 15 / Math.pow(r, 1.5); 
+            
+            // 3. Matrice di rotazione 2D: calcoliamo la nuova posizione lungo l'orbita
+            const cos = Math.cos(-speed); // Il segno meno stabilisce il senso orario/antiorario
+            const sin = Math.sin(-speed);
+            
+            // 4. Aggiorniamo le coordinate X e Z
+            positions[i] = x * cos - z * sin;
+            positions[i + 2] = x * sin + z * cos;
+        }
+        
+        // 5. Comunichiamo obbligatoriamente alla scheda video che le posizioni sono state modificate
+        accretionDisk.geometry.attributes.position.needsUpdate = true;
     }
 
+    //ROTAZIIONE GALASSIA
     if (galaxy) {
         galaxy.rotation.y += 0.0002; // Rotazione impercettibile e maestosa
     }
-
-
 
     // UI
     if (buttonSwitch && player && promptUI) {
