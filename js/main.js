@@ -8,11 +8,12 @@ let sunLight; // Luce direzionale (Il "Sole")
 const keys = { w: false, a: false, s: false, d: false, shift: false };
 let velocityY = 0;
 const gravity = -0.01;
-const jumpForce = 0.2;
+const jumpForce = 0.26;
 let isJumping = false;
 let platforms = [];
 let walls = [];
 let door;
+let doorOriginalY = null;   // Memorizzerà l'altezza esatta della porta chiusa
 let starMaterial;
 let planet, planet2, planet3, planet4;
 let sunMesh;
@@ -42,6 +43,11 @@ let isButtonAnimating = false; // Impedisce lo spam del tasto F durante il movim
 
 let blackHoleGroup, accretionDisk;
 let galaxy;
+
+let holoSystem;
+
+let radarBlip;    // Conterrà l'oggetto 3D del puntino
+let blipTimer = 0; // Servirà a gestire il tempo del lampeggio
 
 
 const promptUI = document.getElementById('interaction-prompt');
@@ -169,6 +175,339 @@ function createGalaxy() {
     scene.add(galaxy);
 }
 
+// Genera un tavolo olografico fantascientifico
+function createHologramTable(x, y, z) {
+    const tableGroup = new THREE.Group();
+    tableGroup.position.set(x, y, z);
+
+    // 1. La base del tavolo (Cilindro metallico)
+    const baseGeo = new THREE.CylinderGeometry(1.5, 2, 1, 16);
+    const baseMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.8, roughness: 0.3 });
+    const base = new THREE.Mesh(baseGeo, baseMat);
+    base.position.y = 0.5; // Solleviamo la base
+    tableGroup.add(base);
+
+    // 2. Il sistema solare olografico (Gruppo rotante)
+    holoSystem = new THREE.Group();
+    holoSystem.position.y = 2.5; // Fluttua sopra il tavolo
+
+    // Materiale stile ologramma (Azzurro, trasparente, luminoso e a griglia)
+    const holoMat = new THREE.MeshBasicMaterial({ 
+        color: 0x00ffff, 
+        transparent: true, 
+        opacity: 0.6, 
+        wireframe: true, 
+        blending: THREE.AdditiveBlending 
+    });
+
+    const sunGeo = new THREE.SphereGeometry(0.6, 16, 16);
+    const sun = new THREE.Mesh(sunGeo, holoMat);
+    holoSystem.add(sun);
+
+    const planetGeo = new THREE.SphereGeometry(0.2, 8, 8);
+    const planet = new THREE.Mesh(planetGeo, holoMat);
+    planet.position.set(1.5, 0, 0); // Orbita a distanza
+    holoSystem.add(planet);
+
+    const planetGeo2 = new THREE.SphereGeometry(0.15, 7, 8);
+    const planet2 = new THREE.Mesh(planetGeo2, holoMat);
+    planet2.position.set(-1.0, 0.5, 1); // Orbita a distanza
+    holoSystem.add(planet2);
+
+    tableGroup.add(holoSystem);
+    scene.add(tableGroup);
+}
+
+// Genera un terminale a muro con schermo luminoso
+function createWallConsole(x, y, z, rotationY) {
+    const consoleGroup = new THREE.Group();
+    consoleGroup.position.set(x, y, z);
+    consoleGroup.rotation.y = rotationY;
+
+    // 1. La scrivania
+    const deskGeo = new THREE.BoxGeometry(3, 1, 1.5);
+    const deskMat = new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.9 });
+    const desk = new THREE.Mesh(deskGeo, deskMat);
+    desk.position.y = 1;
+    consoleGroup.add(desk);
+
+    // 2. Lo schermo luminoso
+    const screenGeo = new THREE.PlaneGeometry(2.5, 1.2);
+    const screenMat = new THREE.MeshBasicMaterial({ 
+        color: 0x00ffaa, 
+        transparent: true, 
+        opacity: 0.8, 
+        side: THREE.DoubleSide 
+    });
+    const screen = new THREE.Mesh(screenGeo, screenMat);
+    screen.position.set(0, 2, -0.6); // Messo dietro la scrivania
+    screen.rotation.x = 0.2;         // Leggermente inclinato verso il basso
+    consoleGroup.add(screen);
+
+    scene.add(consoleGroup);
+}
+
+function createWallRadar(x, y, z, rotationY) {
+    const radarGroup = new THREE.Group();
+    radarGroup.position.set(x, y, z);
+    radarGroup.rotation.y = rotationY;
+
+    // Sfondo del radar
+    const plateGeo = new THREE.CylinderGeometry(2, 2, 0.1, 32);
+    const plateMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+    const plate = new THREE.Mesh(plateGeo, plateMat);
+    plate.rotation.x = Math.PI / 2; 
+    radarGroup.add(plate);
+
+    // Griglia del radar verde incandescente
+    const gridGeo = new THREE.CylinderGeometry(1.9, 1.9, 0.02, 32);
+    const gridMat = new THREE.MeshBasicMaterial({ 
+        color: 0x00ff00, 
+        wireframe: true, 
+        transparent: true, 
+        opacity: 0.4 
+    });
+    const grid = new THREE.Mesh(gridGeo, gridMat);
+    grid.rotation.x = Math.PI / 2;
+    grid.position.z = 0.06; 
+    radarGroup.add(grid);
+
+    // --- NUOVO: IL PUNTINO LAMPEGGIANTE (BLIP) ---
+    const blipGeo = new THREE.SphereGeometry(0.06, 16, 16); // Una microsfera
+    const blipMat = new THREE.MeshBasicMaterial({ 
+        color: 0x33ff33,      // Verde acido molto luminoso
+        transparent: true,    // Fondamentale per poter gestire l'opacity nell'animate
+        opacity: 0            // Parte invisibile
+    });
+    radarBlip = new THREE.Mesh(blipGeo, blipMat);
+    
+    // Lo posizioniamo a Z = 0.08 così sta leggermente DAVANTI alla griglia senza compenetrarsi
+    radarBlip.position.set(0, 0, 0.08); 
+    radarGroup.add(radarBlip);
+
+    scene.add(radarGroup);
+}
+
+function createFloorVent(x, z) {
+    const ventGroup = new THREE.Group();
+    ventGroup.position.set(x, 0.26, z); // Appena sopra il pavimento calpestabile per evitare sfarfallii (Z-fighting)
+
+    // Cornice della grata
+    const frameGeo = new THREE.BoxGeometry(4, 0.02, 4);
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.8 });
+    const frame = new THREE.Mesh(frameGeo, frameMat);
+    ventGroup.add(frame);
+
+    // Luce arancione industriale che proviene da sotto la grata
+    const ventLight = new THREE.PointLight(0xff5500, 0.8, 4);
+    ventLight.position.y = 0.5;
+    ventGroup.add(ventLight);
+
+    // Sottili barre metalliche interne
+    const barGeo = new THREE.BoxGeometry(0.1, 0.03, 3.6);
+    const barMat = new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.9 });
+    
+    for (let i = -5; i <= 5; i++) {
+        const bar = new THREE.Mesh(barGeo, barMat);
+        bar.position.x = i * 0.3;
+        ventGroup.add(bar);
+    }
+
+    scene.add(ventGroup);
+}
+
+function createMainframe(x, y, z, rotationY) {
+    const mainframe = new THREE.Group();
+    mainframe.position.set(x, y, z);
+    mainframe.rotation.y = rotationY;
+
+    // Mobile del server
+    const cabinetGeo = new THREE.BoxGeometry(3, 6, 2);
+    const cabinetMat = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.8 });
+    const cabinet = new THREE.Mesh(cabinetGeo, cabinetMat);
+    cabinet.position.y = 3;
+    mainframe.add(cabinet);
+
+    // Aggiungiamo qualche linea LED orizzontale di dettagli sul server
+    for (let i = 0; i < 5; i++) {
+        const ledGeo = new THREE.BoxGeometry(2.4, 0.1, 0.1);
+        // Scegliamo un colore casuale tra verde e rosso per i led dei server
+        const ledColor = Math.random() > 0.5 ? 0x00ff00 : 0xff0000;
+        const ledMat = new THREE.MeshBasicMaterial({ color: ledColor });
+        const led = new THREE.Mesh(ledGeo, ledMat);
+        
+        led.position.set(0, 1 + i * 1.1, 1.01); // Posizionati sulla faccia anteriore
+        mainframe.add(led);
+    }
+
+    scene.add(mainframe);
+}
+
+function createCryoPod(x, y, z, rotationY) {
+    const podGroup = new THREE.Group();
+    podGroup.position.set(x, y, z);
+    podGroup.rotation.y = rotationY;
+
+    // 1. LA BASE (Diritta sul pavimento)
+    const baseGeo = new THREE.CylinderGeometry(1.5, 1.6, 0.4, 16);
+    const baseMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.8, roughness: 0.5 });
+    const base = new THREE.Mesh(baseGeo, baseMat);
+    base.position.y = 0.2;
+    podGroup.add(base);
+
+    // 2. IL GRUPPO INCLINATO (Corpo del pod)
+    const tiltedGroup = new THREE.Group();
+    tiltedGroup.position.y = 0.4;  // Si appoggia sulla base
+    tiltedGroup.rotation.x = -0.25; // Inclinato all'indietro di circa 15 gradi!
+    podGroup.add(tiltedGroup);
+
+    // Corpo metallico interno (Cilindro intero)
+    const bodyGeo = new THREE.CylinderGeometry(1.1, 1.1, 4.2, 16);
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.7 });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 2.1;
+    tiltedGroup.add(body);
+
+    // Vetro anteriore a semicerchio 
+    // I parametri extra servono a tagliare il cilindro a metà (da -90° a +90°)
+    const glassGeo = new THREE.CylinderGeometry(1.15, 1.15, 3.8, 16, 1, false, -Math.PI/2, Math.PI);
+    const glassMat = new THREE.MeshPhysicalMaterial({ 
+        color: 0x00ffaa, 
+        transparent: true, 
+        opacity: 0.3,
+        roughness: 0.1,
+        metalness: 0.5,
+        depthWrite: false // Evita sfarfallii del vetro
+    });
+    const glass = new THREE.Mesh(glassGeo, glassMat);
+    glass.position.y = 2.1;
+    tiltedGroup.add(glass);
+
+    // Luce vitale interna
+    const interiorLight = new THREE.PointLight(0x00ffaa, 1, 5);
+    interiorLight.position.set(0, 2.1, 0.5);
+    tiltedGroup.add(interiorLight);
+
+    scene.add(podGroup);
+
+    // 3. HITBOX INVISIBILE PER LE COLLISIONI
+    // Creiamo un cubo "finto" che copre l'area del pod.
+    const hitboxGeo = new THREE.BoxGeometry(3, 5, 3);
+    const hitboxMat = new THREE.MeshBasicMaterial({ visible: false }); // Invisibile!
+    const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
+    
+    // Posizioniamo l'hitbox esattamente dove si trova il pod
+    hitbox.position.set(x, y + 2.5, z);
+    scene.add(hitbox);
+    
+    // Aggiungiamo l'hitbox invisibile al sistema dei muri invece del pod!
+    walls.push(hitbox);
+}
+
+function createEnergyPipe(x, z) {
+    const pipeGroup = new THREE.Group();
+    pipeGroup.position.set(x, 0, z);
+
+    // Il tubo esterno (Griglia metallica o semitrasparente)
+    const outerGeo = new THREE.CylinderGeometry(0.6, 0.6, 8, 16);
+    const outerMat = new THREE.MeshStandardMaterial({ 
+        color: 0x222222, 
+        metalness: 0.9, 
+        roughness: 0.2,
+        transparent: true,
+        opacity: 0.6
+    });
+    const outerPipe = new THREE.Mesh(outerGeo, outerMat);
+    outerPipe.position.y = 4; // Centrato verticalmente rispetto all'altezza della stanza (h=8)
+    pipeGroup.add(outerPipe);
+
+    // Il nucleo di energia interno (Luminoso!)
+    const innerGeo = new THREE.CylinderGeometry(0.2, 0.2, 8, 8);
+    const innerMat = new THREE.MeshBasicMaterial({ 
+        color: 0x0088ff, // Azzurro plasma (o rosso se vuoi un look di allarme)
+    });
+    const innerPipe = new THREE.Mesh(innerGeo, innerMat);
+    innerPipe.position.y = 4;
+    pipeGroup.add(innerPipe);
+
+    scene.add(pipeGroup);
+}
+
+function createSciFiCeiling() {
+    const ceilingGroup = new THREE.Group();
+    
+    // Supponendo che la tua stanza sia alta 8 e larga 40x40
+    const roomHeight = 8; 
+    ceilingGroup.position.y = roomHeight;
+
+    // 1. IL PANNELLO BASE (Il vero e proprio soffitto scuro)
+    const baseGeo = new THREE.BoxGeometry(40, 0.5, 40);
+    const baseMat = new THREE.MeshStandardMaterial({ 
+        color: 0x111111, 
+        roughness: 0.9, // Molto ruvido, non deve riflettere troppo
+        metalness: 0.3
+    });
+    const ceilingBase = new THREE.Mesh(baseGeo, baseMat);
+    ceilingBase.position.y = 0.25; // Lo alziamo a filo con il bordo inferiore
+    ceilingGroup.add(ceilingBase);
+
+    // 2. LE TRAVI INDUSTRIALI CON NEON
+    const beamGeo = new THREE.BoxGeometry(40, 0.6, 1);
+    const beamMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, metalness: 0.8 });
+    
+    // Creiamo una trave ogni 4 metri usando un ciclo for
+    for (let i = -18; i <= 18; i += 4) {
+        const beam = new THREE.Mesh(beamGeo, beamMat);
+        beam.position.set(0, -0.1, i);
+        ceilingGroup.add(beam);
+        
+        // Ogni due travi (quando 'i' è multiplo di 8), aggiungiamo una striscia LED
+        if (i % 8 === 0) {
+            // Il neon luminoso
+            const ledGeo = new THREE.BoxGeometry(38, 0.05, 0.3);
+            const ledMat = new THREE.MeshBasicMaterial({ color: 0x00aaff }); // Azzurro ciano
+            const led = new THREE.Mesh(ledGeo, ledMat);
+            led.position.set(0, -0.4, i); // Appena sotto la trave
+            ceilingGroup.add(led);
+            
+            // La luce effettiva che illumina la stanza dall'alto
+            const ceilLight = new THREE.PointLight(0x00aaff, 0.6, 20);
+            ceilLight.position.set(0, -1, i);
+            ceilingGroup.add(ceilLight);
+        }
+    }
+
+    // 3. IL GENERATORE CENTRALE / BOCCHETTONE
+    // Un dettaglio circolare al centro del soffitto per rompere tutte queste linee rette
+    const coreGeo = new THREE.CylinderGeometry(3, 3, 0.8, 32);
+    const coreMat = new THREE.MeshStandardMaterial({ color: 0x151515, metalness: 1 });
+    const core = new THREE.Mesh(coreGeo, coreMat);
+    core.position.y = -0.2;
+    ceilingGroup.add(core);
+
+    const coreRingGeo = new THREE.CylinderGeometry(2, 2, 0.9, 32);
+    const coreRingMat = new THREE.MeshBasicMaterial({ color: 0xff5500, wireframe: true });
+    const coreRing = new THREE.Mesh(coreRingGeo, coreRingMat);
+    coreRing.position.y = -0.25;
+    ceilingGroup.add(coreRing);
+
+    scene.add(ceilingGroup);
+
+    ceilingGroup.traverse(child => {
+        if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+        }
+    });
+
+    // 4. HITBOX PER LE COLLISIONI
+    // Aggiungiamo il pannello base ai 'walls' così il giocatore non può 
+    // uscire dalla mappa se salta troppo in alto (magari da sopra un server rack!)
+    
+    //walls.push(ceilingBase); 
+}
+
+
 // --- LOGICA DI ILLUMINAZIONE FISICA ---
 function getIntensityOnObject(lightSource, targetObj) {
     const lightPos = new THREE.Vector3();
@@ -206,6 +545,48 @@ function getIntensityOnObject(lightSource, targetObj) {
     return intensity;
 }
 
+function openSciFiDoor() {
+    if (isDoorOpen) return; // Se la porta è già aperta o si sta aprendo, non fare nulla
+    isDoorOpen = true;
+
+    // La prima volta che si apre, memorizziamo l'altezza iniziale della porta
+    if (doorOriginalY === null) doorOriginalY = door.position.y;
+
+    // 1. Animazione di Apertura (La porta sale di 8 unità)
+    new TWEEN.Tween(door.position)
+        .to({ y: doorOriginalY + 8 }, 1200)
+        .easing(TWEEN.Easing.Cubic.Out)
+        .start();
+
+    // 2. Rimuoviamo temporaneamente la porta dalle collisioni per poter passare
+    const doorIndex = walls.indexOf(door);
+    if (doorIndex > -1) {
+        walls.splice(doorIndex, 1);
+    }
+
+    // 3. IL TIMER: Aspetta 5 secondi (5000 millisecondi) e poi avvia la chiusura
+    setTimeout(() => {
+        closeSciFiDoor();
+    }, 8000); 
+}
+
+function closeSciFiDoor() {
+    // 1. Animazione di Chiusura (La porta torna alla sua Y originale)
+    new TWEEN.Tween(door.position)
+        .to({ y: doorOriginalY }, 1200)
+        .easing(TWEEN.Easing.Cubic.In)
+        .onComplete(() => {
+            // Quando l'animazione è del tutto finita:
+            isDoorOpen = false; // La porta può essere riaperta dai sensori
+            
+            // 2. Ripristiniamo la collisione della porta nel sistema dei muri
+            if (!walls.includes(door)) {
+                walls.push(door);
+            }
+        })
+        .start();
+}
+
 // --- AGGIORNAMENTO STATI ---
 function updateSensors() {
     sensors.forEach(sensor => {
@@ -226,7 +607,9 @@ function updateSensors() {
             crystal.rotation.y += 0.04;
         }
     });
-    updateDoor();
+    if (s1.userData.activated === true && s2.userData.activated === true && !isDoorOpen) {
+        openSciFiDoor();
+    }
 }
 
 function updateSpecialPlatforms() {
@@ -236,7 +619,7 @@ function updateSpecialPlatforms() {
         const i1 = isLampOn ? getIntensityOnObject(playerLamp, plat) : 0;
         const i2 = isLightOn ? getIntensityOnObject(interactLight, plat) : 0;
         const i3 = isLampOn ? getIntensityOnObject(playerGlow, plat) : 0;
-        const isHitByLight = (i1 + i2 + i3) > 0.14;
+        const isHitByLight = (i1 + i2 + i3) > 0.07;
 
         if (plat.userData.type === 'shadow') {
             plat.visible = !isHitByLight;
@@ -272,18 +655,19 @@ function updateDoor() {
             .to({ y: targetY }, 1500) // 1500 millisecondi = 1.5 secondi di durata del movimento
             .easing(TWEEN.Easing.Cubic.InOut) // Inizia lento, accelera, decelera alla fine (molto cinematico)
             .start(); // Avvia il tween
+
     }
 }
 
 function createSciFiCable() {
     // Definiamo i punti di snodo del cavo per farlo sembrare agganciato alle pareti
     const points = [
-        new THREE.Vector3(0, 0.25, 9.4),     // 1. Parte dal retro del bottone
-        new THREE.Vector3(0, 0.5, 9.5),     // 2. Scende subito al pavimento
-        new THREE.Vector3(0, 0.5, 9.0),    // 3. Va dritto verso il muro posteriore
-        new THREE.Vector3(-9.3, 0.5, 9.0), // 4. Segue la linea del muro fino all'angolo sinistro
-        new THREE.Vector3(-9.7, 2.5, 2.0),    // 5. Cammina sul pavimento fino a trovarsi sotto la luce
-        new THREE.Vector3(-10, 5.5, 0),     // 6. Sale dritto sul muro fino all'altezza della lampada
+        new THREE.Vector3(-19, 1, 14),     // 1. Parte dal retro del bottone
+        new THREE.Vector3(-19, 1, 12.5),     // 2. Scende subito al pavimento
+        new THREE.Vector3(-19, 3, 10),    // 3. Va dritto verso il muro posteriore
+        new THREE.Vector3(-19, 5, 9.0), // 4. Segue la linea del muro fino all'angolo sinistro
+        new THREE.Vector3(-19, 6, 3.0),    // 5. Cammina sul pavimento fino a trovarsi sotto la luce
+        new THREE.Vector3(-19.5, 5.5, -10.0),     // 6. Sale dritto sul muro fino all'altezza della lampada
     ];
 
     // Creiamo una curva morbida che unisce questi punti
@@ -340,22 +724,68 @@ function createWorld() {
     floorTex.wrapT = THREE.RepeatWrapping;
     floorTex.repeat.set(4, 4);
 
-    // --- STANZA PRINCIPALE (Pavimento come Piattaforma) ---
-    // Posizioniamo il pavimento a Y=0. Con altezza 0.5, la superficie calpestabile è a Y=0.25
-    addPlatform(0, 0, 0, 20, 20, floorTex);
+    // --- STANZA PRINCIPALE (Allargata a 40x40) ---
+    addPlatform(0, 0, 0, 40, 40, floorTex);
 
-    // --- 2. MURI (Usiamo addWall) ---
-    const h = 6; // altezza
-    const t = 1; // spessore
-    addWall(-10.5, h/2, 0, t, h, 20, 0xffffff, wallTex);      // Sinistra
-    addWall(10.5, h/2, 0, t, h, 20, 0xffffff, wallTex);       // Destra
-    addWall(0, h/2, 10.5, 22, h, t, 0xffffff, wallTex);      // Dietro
-    addWall(-7, h/2, -10.5, 8, h, t, 0xffffff, wallTex);     // Davanti sx
-    addWall(7, h/2, -10.5, 8, h, t, 0xffffff, wallTex);      // Davanti dx
-    addWall(0, 5, -10.5, 6, 2, t, 0xffffff, wallTex);        // Trave sopra porta
+    // --- MURI (Ricalcolati per spazio 40x40) ---
+    const h = 8; // Soffitto più alto per dare respiro (8 invece di 6)
+    const t = 1;
+    addWall(-20.5, h/2, 0, t, h, 40, 0xffffff, wallTex);      // Sinistra
+    addWall(20.5, h/2, 0, t, h, 40, 0xffffff, wallTex);       // Destra
+    
+    // Frontale (Dove c'è la porta a Z = -20.5)
+    // Essendo largo 40, dividiamo il muro in due pezzi larghi 17, lasciando 6 di buco per la porta
+    addWall(-11.5, h/2, -20.5, 17, h, t, 0xffffff, wallTex);  // Davanti sx
+    addWall(11.5, h/2, -20.5, 17, h, t, 0xffffff, wallTex);   // Davanti dx
+    addWall(0, 6, -20.5, 6, 4, t, 0xffffff, wallTex);         // Trave alta sopra la porta
+
+    // --- LA VETRATA PANORAMICA (Dietro) ---
+    // Invece di un muro di pietra, creiamo un vetro oscurato e leggermente trasparente
+    const glassGeo = new THREE.BoxGeometry(40, h, t);
+    const glassMat = new THREE.MeshPhysicalMaterial({ 
+        color: 0x112244, 
+        transparent: true, 
+        opacity: 0.3,     // Permette di vedere fuori!
+        roughness: 0.1, 
+        metalness: 0.5,
+        fog: false,         // Ignora la nebbia: non diventerà mai opaca in lontananza!
+        depthWrite: false   // Evita che il vetro "tagli" visivamente l'ologramma o la galassia dietro di esso
+    });
+    const giantWindow = new THREE.Mesh(glassGeo, glassMat);
+    giantWindow.position.set(0, h/2, 20.5);
+    scene.add(giantWindow);
+    walls.push(giantWindow); // Se vogliamo che anche il vetro sia colpito dalle ombre dinamiche
 
     // --- PORTA ---
-    door = addWall(0, h/3, -10.5, 6, h, 0.4, 0x442200, doorTex);
+    door = addWall(0, h/3, -20.5, 6, h, 0.4, 0x442200, doorTex);
+
+    // --- ARREDAMENTO DELLA STANZA ---
+    // Inseriamo l'ologramma al centro della stanza
+    createHologramTable(0, 0, 0);
+
+    // Inseriamo due console/tablet ai lati della stanza
+    createWallConsole(-18, 0, 5, Math.PI / 2); // Muro sinistro, ruotato di 90 gradi
+    createWallConsole(18, 0, 5, -Math.PI / 2); // Muro destro, ruotato di -90 gradi
+
+    // Esempio d'uso dentro createWorld():
+    createEnergyPipe(-19, -19); // Angolo avanti-sinistra
+    createEnergyPipe(19, -19);  // Angolo avanti-destra
+
+    // Esempio d'uso vicino a un muro laterale:
+    createCryoPod(-18, 0, -2, Math.PI / 2);
+    createCryoPod(-18, 0, 1, Math.PI / 2);
+
+    // Esempio d'uso:
+    createMainframe(18, 0, -5, -Math.PI / 2);
+
+    // Esempio d'uso (mettile dove il cammino è libero):
+    createFloorVent(-10, 10);
+    createFloorVent(10, 10);
+
+    // Esempio d'uso (appeso sulla parete frontale, accanto alla porta):
+    createWallRadar(8, 4, -19.4, 0);
+
+    createSciFiCeiling();
 
     // --- SENSORI E INTERRUTTORI (Posizioni regolate) ---
     loader.load('./models/Untitled.glb', (gltf) => {
@@ -405,7 +835,7 @@ function createWorld() {
         }
 
         s1.rotation.y = -Math.PI/2; 
-        s1.position.set(9, 1, 0);
+        s1.position.set(18, 1, -10);
         s1.userData = { activated: false };
         sensors.push(s1);
         scene.add(s1);
@@ -463,7 +893,7 @@ function createWorld() {
         }
 
         s2.rotation.y = Math.PI /2; 
-        s2.position.set(-9, 1, 0);
+        s2.position.set(-18, 1, -10);
         s2.userData = { activated: false };
         sensors.push(s2);
         scene.add(s2);
@@ -494,8 +924,8 @@ function createWorld() {
             buttonInitialPos = movingButton.position.clone();
         }
 
-        buttonSwitch.rotation.y = Math.PI;
-        buttonSwitch.position.set(0, 0.25, 9.3);
+        buttonSwitch.rotation.y = Math.PI/2;
+        buttonSwitch.position.set(-19, 0.25, 14);
         scene.add(buttonSwitch);
         console.log("Modello caricato correttamente");
     }, undefined, (error) => {
@@ -504,7 +934,7 @@ function createWorld() {
 
     //luce interattiva
     interactLight = new THREE.PointLight(0xffaa00, 0, 15, 2);
-    interactLight.position.set(-9, 5.5, 0);
+    interactLight.position.set(-18, 5.5, -10);
     interactLight.castShadow = true;
     interactLight.shadow.bias = -0.005; // Fondamentale per eliminare le righe nere
     interactLight.shadow.mapSize.width = 1024; // Opzionale: migliora la qualità
@@ -526,7 +956,7 @@ function createWorld() {
         });
 
         luce.rotation.y = Math.PI /2;
-        luce.position.set(-9.9, 5.5, 0);
+        luce.position.set(-19, 5.5, -10);
         scene.add(luce);
         console.log("Modello caricato correttamente");
     }, undefined, (error) => {
@@ -596,21 +1026,22 @@ function createWorld() {
     playerGlow.position.set(0, -0.5, 0);
     player.add(playerGlow);
 
-    // --- PERCORSO ESTERNO ---
-    addPlatform(0, 0, -16, 4, 4, floorTex); // Prima piattaforma fuori
-    addPlatform(0, 0.5, -22, 3, 3, null, false, 'shadow');
-    addPlatform(0, 1, -28, 3, 3, floorTex);
-    addPlatform(0, 1.5, -35, 3, 3, floorTex, true);
+    // --- PERCORSO ESTERNO (Distanze Scalate x2) ---
+    addPlatform(0, 0, -30, 4, 4, floorTex); // Prima piattaforma fuori (da -16 a -32)
+    addPlatform(0, 0.5, -40, 3, 3, null, false, 'shadow'); // (da -22 a -44)
+    addPlatform(0, 1, -50, 3, 3, floorTex); // (da -28 a -56)
+    addPlatform(0, 1.5, -62, 3, 3, floorTex, true); // (da -35 a -70)
     platforms[platforms.length - 1].userData.moveAxis = 'x';
     platforms[platforms.length - 1].userData.startX = 0;
-    addPlatform(5, 2, -42, 2, 2, floorTex, false, 'light-only');
-    addPlatform(0, 2.5, -50, 6, 6, floorTex);
+    
+    addPlatform(9, 2, -71, 2, 2, floorTex, false, 'light-only'); // Scalata X da 5 a 10 e Z da -42 a -84
+    addPlatform(0, 2.5, -85, 6, 6, floorTex); // (da -50 a -100)
 
 
     // --- IL SOLE ---
 
-    // Posizioniamo il Sole lontano nel cielo
-    const sunPosition = new THREE.Vector3(180, 80, -250); 
+    // Posizioniamo il Sole più lontano nel cielo (Valori originali x2)
+    const sunPosition = new THREE.Vector3(360, 160, -500); 
 
     // Geometria più grande (raggio 25) perché è molto distante
     const sunGeo = new THREE.SphereGeometry(25, 32, 32); 
@@ -626,7 +1057,7 @@ function createWorld() {
     scene.add(sunMesh);
 
     // 2. Luce del sole
-    sunPointLight = new THREE.PointLight(0xffaa00, 2.0, 600); 
+    sunPointLight = new THREE.PointLight(0xffaa00, 2.0, 1200); // Aumentato il raggio della luce a 1200 visto che è più lontano
     sunPointLight.castShadow = true;
     sunPointLight.shadow.mapSize.width = 2048; 
     sunPointLight.shadow.mapSize.height = 2048;
@@ -691,7 +1122,7 @@ function createWorld() {
         planet2.receiveShadow = true;
 
         // Distanza dal sole (es: 150 unità a destra, su un'orbita più larga)
-        planet2.position.set(150, -10, -10); 
+        planet2.position.set(300, -20, -20);
     
         // Agganciamo il Pianeta 2 al secondo Pivot del sole
         sunPivot2.add(planet2);
@@ -723,7 +1154,7 @@ function createWorld() {
         planet = gltf.scene;
         planet.scale.set(4, 4, 4); 
         // Posizioniamo il pianeta
-        planet.position.set(-150, -20, 30);
+        planet.position.set(-300, -40, 60);
         // Rendiamo il modello capace di proiettare ombre
         planet.castShadow = true;
         planet.receiveShadow = true;
@@ -741,7 +1172,7 @@ function createWorld() {
         planet3 = gltf.scene;
         planet3.scale.set(2, 2, 2); 
         // Posizioniamo il pianeta
-        planet3.position.set(-150, 10, 50);
+        planet3.position.set(-300, 20, 100);
         // Rendiamo il modello capace di proiettare ombre
         planet3.castShadow = true;
         planet3.receiveShadow = true;
@@ -769,7 +1200,7 @@ function createWorld() {
         planet4 = gltf.scene;
         planet4.scale.set(4, 4, 4); 
         // Posizioniamo il pianeta
-        planet4.position.set(100, 0, 40);
+        planet4.position.set(200, 0, 80);
         // Rendiamo il modello capace di proiettare ombre
         planet4.castShadow = true;
         planet4.receiveShadow = true;
@@ -1087,6 +1518,10 @@ function animate() {
         sunPivot4.rotation.y += 0.0007; // Pianeta 4 più lento (orbita esterna)
     }
 
+    if (holoSystem) {
+        holoSystem.rotation.y += 0.01; // Fa ruotare il sistema olografico
+    }
+
     // 3. I pianeti ruotano sul proprio asse
     if (planet) planet.rotation.y += 0.005;
     if (planet2) planet2.rotation.y += 0.003;
@@ -1143,6 +1578,32 @@ function animate() {
             promptUI.style.display = 'none';  // Nasconde il suggerimento
         }
     }
+
+    // --- ANIMAZIONE DEL RADAR ---
+    if (radarBlip) {
+        blipTimer += 0.04; // Regola questo valore per cambiare la VELOCITÀ del lampeggio
+
+        // Math.sin oscilla tra -1 e 1. Usiamo Math.max(0, ...) per fare in modo che 
+        // resti invisibile per metà del tempo (quando il seno è negativo) simulando una pausa
+        const opacityValue = Math.max(0, Math.sin(blipTimer));
+        radarBlip.material.opacity = opacityValue;
+
+        // Quando il timer compie un intero ciclo (2 * PI), il puntino è tornato invisibile.
+        // Questo è il momento perfetto per spostarlo in un punto random senza che il giocatore lo veda saltare!
+        if (blipTimer >= Math.PI * 2) {
+            blipTimer = 0; // Resetta il ciclo del timer
+
+            // Generiamo una posizione random dentro un cerchio usando la trigonometria.
+            // Il radar ha un raggio di 1.9, quindi teniamo il puntino entro un raggio massimo di 1.6 per non farlo toccare i bordi.
+            const randomAngle = Math.random() * Math.PI * 2;
+            const randomRadius = Math.random() * 1.6; 
+
+            // Calcoliamo le coordinate X e Y locali sulla faccia del radar
+            radarBlip.position.x = Math.cos(randomAngle) * randomRadius;
+            radarBlip.position.y = Math.sin(randomAngle) * randomRadius;
+        }
+    }
+
     updateSensors();
     updateSpecialPlatforms();
     renderer.render(scene, camera);
