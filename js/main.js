@@ -15,9 +15,9 @@ let walls = [];
 let door;
 let doorOriginalY = null;   // Memorizzerà l'altezza esatta della porta chiusa
 let starMaterial;
-let planet, planet2, planet3, planet4;
+let planet, planet2, planet3, planet4, planet5, planet6; // Modelli dei pianeti
 let sunMesh;
-let sunPivot1, sunPivot2, sunPivot3, sunPivot4; // 4 perni separati per i 4 pianeti
+let sunPivot1, sunPivot2, sunPivot3, sunPivot4, sunPivot5, binaryPivot; // 5 perni separati per i 5 pianeti
 let sunPointLight;
 let solarFlares;
 let moonPivot, moon;
@@ -60,7 +60,7 @@ function init() {
     // Texture Loader (Project 3)
     textureLoader = new THREE.TextureLoader();
 
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -1082,6 +1082,14 @@ function createWorld() {
     sunPivot4.position.copy(sunPosition);
     scene.add(sunPivot4);
 
+    sunPivot5 = new THREE.Group();
+    sunPivot5.position.copy(sunPosition);
+    scene.add(sunPivot5);
+
+    binaryPivot = new THREE.Group();
+    binaryPivot.position.set(260, 70, -400);
+    scene.add(binaryPivot);
+
     // 2. LE FIAMME SOLARI (Tempesta di particelle)
     const flareGeo = new THREE.BufferGeometry();
     const flareCount = 600; // Quante fiammelle/scintille vuoi
@@ -1198,7 +1206,7 @@ function createWorld() {
 
     loader.load('./models/Planet4.glb', (gltf) => {
         planet4 = gltf.scene;
-        planet4.scale.set(4, 4, 4); 
+        planet4.scale.set(5, 5, 5); 
         // Posizioniamo il pianeta
         planet4.position.set(200, 0, 80);
         // Rendiamo il modello capace di proiettare ombre
@@ -1212,6 +1220,49 @@ function createWorld() {
         console.log("Modello caricato correttamente");
     }, undefined, (error) => {
         console.error("Errore nel caricamento del modello:", error);
+    });
+
+    loader.load('./models/Planet.glb', (gltf) => {
+        // Assegniamo il modello caricato a planet5
+        planet5 = gltf.scene;
+        
+        // Creiamo un CLONE indipendente per planet6
+        // Il parametro 'true' fa una copia ricorsiva di tutti i figli (mesh, materiali, ecc.)
+        planet6 = gltf.scene.clone(true); 
+
+        planet5.scale.set(4, 4, 4); 
+        planet6.scale.set(4, 4, 4);
+        
+        // Posizioniamo i pianeti speculari rispetto al centro del loro pivot (0,0,0 locale)
+        // Invece di usare coordinate assolute mondiali, li spostiamo rispetto al binaryPivot
+        planet5.position.set(-15, 0, 0); 
+        planet6.position.set(15, 0, 0); 
+        
+        // Rendiamo i modelli capaci di proiettare ombre
+        planet5.traverse((node) => {
+            if (node.isMesh) {
+                node.castShadow = true;
+                node.receiveShadow = true;
+            }
+        });
+        
+        planet6.traverse((node) => {
+            if (node.isMesh) {
+                node.castShadow = true;
+                node.receiveShadow = true;
+            }
+        });
+
+        // Aggiungiamo il baricentro al perno orbitale attorno al sole
+        sunPivot5.add(binaryPivot);
+
+        // Aggiungiamo i due pianeti al loro baricentro comune
+        binaryPivot.add(planet5);
+        binaryPivot.add(planet6);
+
+        console.log("Sistema binario caricato correttamente");
+    }, undefined, (error) => {
+        console.error("Errore nel caricamento del modello binario:", error);
     });
 
     /*
@@ -1475,7 +1526,7 @@ function animate() {
     isJumping = !onObject;
 
     // Reset caduta
-    if (player.position.y < -10) {
+    if (player.position.y < -30) {
         player.position.set(0, 5, 5);
         velocityY = 0;
     }
@@ -1517,6 +1568,30 @@ function animate() {
     if (sunPivot4) {
         sunPivot4.rotation.y += 0.0007; // Pianeta 4 più lento (orbita esterna)
     }
+    if (sunPivot5) {
+        sunPivot5.rotation.y += 0.0003; // Pianeta 5 più lento (orbita esterna)
+    }
+    //intergrazione seconda legge di Keplero per il sistema binario
+    if (binaryPivot && planet5 && planet6) {
+        // 1. Estraiamo il valore del seno per usarlo in due posti (oscilla sempre tra -1 e 1)
+        const sineWave = Math.sin(currenttime); 
+
+        // 2. Rotazione variabile
+        binaryPivot.rotation.y += Math.max(0.01, 0.05 * sineWave);
+
+        // 3. Calcolo della distanza dinamica
+        const baseDistance = 15; // La distanza media dal centro
+        const variation = 6;     // Di quante unità si avvicineranno/allontaneranno al massimo
+        
+        // Sottraendo la variazione moltiplicata per il seno, otteniamo l'effetto elastico:
+        // Quando sineWave è +1 (massima velocità) -> distanza = 15 - 6 = 9 (molto vicini)
+        // Quando sineWave è -1 (minima velocità) -> distanza = 15 - (-6) = 21 (molto lontani)
+        const currentDistance = baseDistance - (variation * sineWave);
+
+        // 4. Aggiorniamo in tempo reale la posizione locale dei due pianeti
+        planet5.position.x = -currentDistance;
+        planet6.position.x = currentDistance;
+    }
 
     if (holoSystem) {
         holoSystem.rotation.y += 0.01; // Fa ruotare il sistema olografico
@@ -1527,6 +1602,8 @@ function animate() {
     if (planet2) planet2.rotation.y += 0.003;
     if (planet3) planet3.rotation.y += 0.008;
     if (planet4) planet4.rotation.y += 0.003;
+    if (planet5) planet5.rotation.y += 0.004;
+    if (planet6) planet6.rotation.y += 0.004;
 
     // 4. La luna gira attorno al pianeta 2 
     if (moonPivot) {
