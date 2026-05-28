@@ -60,3 +60,56 @@ canvas {
     display: none; /* Nascosto di default all'avvio */
     box-shadow: 0 0 10px rgba(255, 170, 0, 0.2);
 }
+
+
+#console-ui {
+    display: none; /* Nascosto di default */
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 450px;
+    background: rgba(5, 20, 35, 0.95);
+    border: 2px solid #00aaff;
+    border-radius: 8px;
+    box-shadow: 0 0 20px rgba(0, 170, 255, 0.6);
+    color: #e0f5ff;
+    font-family: 'Courier New', monospace;
+    padding: 25px;
+    z-index: 1000;
+    box-sizing: border-box;
+}
+
+.console-header {
+    font-size: 20px; font-weight: bold; border-bottom: 2px solid #00aaff; 
+    padding-bottom: 10px; margin-bottom: 20px; color: #00ffff; 
+    text-align: center; text-transform: uppercase; letter-spacing: 2px;
+}
+
+.console-text { font-size: 14px; line-height: 1.6; text-align: left; margin-bottom: 25px; }
+.alert-text { color: #ff3333; font-weight: bold; }
+.directive-text { color: #33ff33; }
+.highlight-text { color: #ffff00; font-weight: bold; }
+
+.console-footer {
+    font-size: 12px; color: #88ccff; border-top: 1px solid rgba(0,170,255,0.3); 
+    padding-top: 12px; text-align: center; animation: pulse 1.5s infinite;
+}
+
+.key-btn { background: #0055aa; color: #fff; padding: 2px 6px; border-radius: 3px; }
+
+.log-meta {
+    display: block;
+    color: #55bbee; /* Un azzurro/grigio più spento e informatico */
+    border-left: 3px solid #ff3333; /* Una linea rossa verticale di pericolo a sinistra */
+    padding-left: 10px;
+    font-size: 13px;
+    background: rgba(255, 51, 51, 0.05); /* Un leggerissimo sfondo rosso sui dati */
+    margin-bottom: 15px;
+}
+
+@keyframes pulse {
+    0% { opacity: 0.5; }
+    50% { opacity: 1; }
+    100% { opacity: 0.5; }
+}
