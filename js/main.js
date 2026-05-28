@@ -1260,21 +1260,15 @@ function createWorld() {
         console.error("Errore nel caricamento del modello:", error);
     });
 
-    loader.load('./models/Planet.glb', (gltf) => {
+    loader.load('./models/Planet5.glb', (gltf) => {
         // Assegniamo il modello caricato a planet5
         planet5 = gltf.scene;
-        
-        // Creiamo un CLONE indipendente per planet6
-        // Il parametro 'true' fa una copia ricorsiva di tutti i figli (mesh, materiali, ecc.)
-        planet6 = gltf.scene.clone(true); 
 
         planet5.scale.set(4, 4, 4); 
-        planet6.scale.set(4, 4, 4);
         
         // Posizioniamo i pianeti speculari rispetto al centro del loro pivot (0,0,0 locale)
         // Invece di usare coordinate assolute mondiali, li spostiamo rispetto al binaryPivot
         planet5.position.set(-15, 0, 0); 
-        planet6.position.set(15, 0, 0); 
         
         // Rendiamo i modelli capaci di proiettare ombre
         planet5.traverse((node) => {
@@ -1284,6 +1278,26 @@ function createWorld() {
             }
         });
         
+
+        // Aggiungiamo il baricentro al perno orbitale attorno al sole
+        sunPivot5.add(binaryPivot);
+
+        // Aggiungiamo i due pianeti al loro baricentro comune
+        binaryPivot.add(planet5);
+
+        console.log("Sistema binario caricato correttamente");
+    }, undefined, (error) => {
+        console.error("Errore nel caricamento del modello binario:", error);
+    });
+
+    loader.load('./models/Planet6.glb', (gltf) => {
+        // Assegniamo il modello caricato a planet5
+        planet6 = gltf.scene;
+        
+        planet6.scale.set(4, 4, 4);
+        
+        planet6.position.set(15, 0, 0); 
+        
         planet6.traverse((node) => {
             if (node.isMesh) {
                 node.castShadow = true;
@@ -1291,11 +1305,6 @@ function createWorld() {
             }
         });
 
-        // Aggiungiamo il baricentro al perno orbitale attorno al sole
-        sunPivot5.add(binaryPivot);
-
-        // Aggiungiamo i due pianeti al loro baricentro comune
-        binaryPivot.add(planet5);
         binaryPivot.add(planet6);
 
         console.log("Sistema binario caricato correttamente");
