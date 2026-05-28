@@ -49,6 +49,11 @@ let holoSystem;
 let radarBlip;    // Conterrà l'oggetto 3D del puntino
 let blipTimer = 0; // Servirà a gestire il tempo del lampeggio
 
+let scifiConsole = null;             // Conterrà il modello 3D della console
+let consoleIndicator = null;         // Il flag visivo (!)
+let isConsoleScreenOpen = false;     // Stato della UI aperta/chiusa
+let hasInteractedWithConsole = false; // Controlla se è la prima volta che si legge
+
 
 const promptUI = document.getElementById('interaction-prompt');
 
@@ -219,7 +224,7 @@ function createHologramTable(x, y, z) {
 }
 
 // Genera un terminale a muro con schermo luminoso
-function createWallConsole(x, y, z, rotationY) {
+function createWallConsole(x, y, z, rotationY, isMainConsole = false) {
     const consoleGroup = new THREE.Group();
     consoleGroup.position.set(x, y, z);
     consoleGroup.rotation.y = rotationY;
@@ -240,11 +245,36 @@ function createWallConsole(x, y, z, rotationY) {
         side: THREE.DoubleSide 
     });
     const screen = new THREE.Mesh(screenGeo, screenMat);
-    screen.position.set(0, 2, -0.6); // Messo dietro la scrivania
-    screen.rotation.x = 0.2;         // Leggermente inclinato verso il basso
+    screen.position.set(0, 2, -0.6); 
+    screen.rotation.x = 0.2;         
     consoleGroup.add(screen);
 
     scene.add(consoleGroup);
+
+    // --- SE È LA CONSOLE PRINCIPALE, AGGIUNGI L'ESCLAMATIVO ---
+    if (isMainConsole) {
+        scifiConsole = consoleGroup; // Salviamo il riferimento
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 128; canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        ctx.font = 'Bold 110px Arial';
+        ctx.fillStyle = '#ffcc00';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.shadowColor = '#ff6600'; ctx.shadowBlur = 15;
+        ctx.fillText('!', 64, 64);
+        
+        const indicatorTexture = new THREE.CanvasTexture(canvas);
+        const spriteMaterial = new THREE.SpriteMaterial({ map: indicatorTexture, depthTest: false });
+        consoleIndicator = new THREE.Sprite(spriteMaterial);
+        
+        // Lo posizioniamo sopra il monitor
+        consoleIndicator.scale.set(1.5, 1.5, 1); 
+        consoleIndicator.position.set(0, 3.5, 0);
+        consoleIndicator.castShadow = false;
+        consoleIndicator.receiveShadow = false;
+        consoleGroup.add(consoleIndicator);
+    }
 }
 
 function createWallRadar(x, y, z, rotationY) {
@@ -509,6 +539,7 @@ function createSciFiCeiling() {
 
 
 // --- LOGICA DI ILLUMINAZIONE FISICA ---
+// --- LOGICA DI ILLUMINAZIONE FISICA ---
 function getIntensityOnObject(lightSource, targetObj) {
     const lightPos = new THREE.Vector3();
     lightSource.getWorldPosition(lightPos);
@@ -536,13 +567,20 @@ function getIntensityOnObject(lightSource, targetObj) {
 
     const rayDir = new THREE.Vector3().subVectors(targetPos, lightPos).normalize();
     const raycaster = new THREE.Raycaster(lightPos, rayDir, 0, dist + 0.5);
-    const intersects = raycaster.intersectObjects(scene.children, true);
+    
+    // --- IL TRUCCO CHE RISOLVE IL LAG ---
+    // Creiamo un array contenente SOLO gli oggetti solidi (muri, pavimenti e il cristallo stesso)
+    // Il raycaster ora controllerà 20 oggetti invece di 30.000!
+    const ostacoliSolidi = [...walls, ...platforms, targetObj];
+    
+    // Usiamo il nuovo array "ostacoliSolidi" invece del vecchio "scene.children"
+    const intersects = raycaster.intersectObjects(ostacoliSolidi, true);
 
     if (intersects.length > 0 && intersects[0].object !== targetObj && intersects[0].object.parent !== targetObj) {
-        return 0;
+        return 0; // La luce è bloccata da un muro o una piattaforma
     }
 
-    return intensity;
+    return intensity; // La luce colpisce l'oggetto!
 }
 
 function openSciFiDoor() {
@@ -765,7 +803,7 @@ function createWorld() {
 
     // Inseriamo due console/tablet ai lati della stanza
     createWallConsole(-18, 0, 5, Math.PI / 2); // Muro sinistro, ruotato di 90 gradi
-    createWallConsole(18, 0, 5, -Math.PI / 2); // Muro destro, ruotato di -90 gradi
+    createWallConsole(18, 0, 5, -Math.PI / 2, true); // Muro destro, ruotato di -90 gradi
 
     // Esempio d'uso dentro createWorld():
     createEnergyPipe(-19, -19); // Angolo avanti-sinistra
@@ -1428,13 +1466,15 @@ function animate() {
     TWEEN.update();
 
     // 2. MOVIMENTO
-    let currentSpeed = keys.shift ? 0.25 : 0.12;
-    if (keys.w) player.translateZ(-currentSpeed);
-    if (keys.s) player.translateZ(currentSpeed);
-    if (keys.a) player.translateX(-currentSpeed);
-    if (keys.d) player.translateX(currentSpeed);
+    if (!isConsoleScreenOpen) {
+        let currentSpeed = keys.shift ? 0.25 : 0.12;
+        if (keys.w) player.translateZ(-currentSpeed);
+        if (keys.s) player.translateZ(currentSpeed);
+        if (keys.a) player.translateX(-currentSpeed);
+        if (keys.d) player.translateX(currentSpeed);
+    }
 
-    if (keys.w || keys.s || keys.a || keys.d) {
+    if ((keys.w || keys.s || keys.a || keys.d) && !isConsoleScreenOpen) {
         const speed = 0.008; // Velocità dell'oscillazione
         const time = Date.now() * speed;
         const amplitude = 0.5; // Quanto deve oscillare (in radianti)
@@ -1645,12 +1685,19 @@ function animate() {
         galaxy.rotation.y += 0.0002; // Rotazione impercettibile e maestosa
     }
 
-    // UI
-    if (buttonSwitch && player && promptUI) {
-        const distanceToButton = player.position.distanceTo(buttonSwitch.position);
+    // --- FLUTTUAZIONE DEL PUNTO ESCLAMATIVO (!) ---
+    if (consoleIndicator) {
+        consoleIndicator.position.y = 3.5 + Math.sin(Date.now() * 0.004) * 0.15;
+    }
+
+    // --- SEZIONE UI (Controllo prossimità unificato) ---
+    if (player && promptUI) {
+        // Controlliamo se siamo vicini al bottone OPPURE alla console
+        const isNearButton = buttonSwitch && player.position.distanceTo(buttonSwitch.position) < 3;
+        const isNearConsole = scifiConsole && player.position.distanceTo(scifiConsole.position) < 4;
         
-        if (distanceToButton < 3) {
-            promptUI.style.display = 'block'; // Mostra il suggerimento a schermo
+        if (isNearButton || isNearConsole) {
+            promptUI.style.display = 'block'; // Mostra "Press [F] to interact"
         } else {
             promptUI.style.display = 'none';  // Nasconde il suggerimento
         }
@@ -1695,13 +1742,14 @@ function setupEventListeners() {
         keys[e.key.toLowerCase()] = true;
         
         //salto
-        if (e.key === ' ' && !isJumping) {
+        if (e.key === ' ' && !isJumping && !isConsoleScreenOpen) {
             velocityY = jumpForce;
             isJumping = true;
         }
 
         //lampada
         if (e.key.toLowerCase() === 'e') {
+            if (isConsoleScreenOpen) return; // Blocca l'interazione con la torcia se la console è aperta
             isLampOn = !isLampOn;
             playerLamp.intensity = isLampOn ? 9 : 0;
             playerGlow.intensity = isLampOn ? 5 : 0;
@@ -1710,6 +1758,32 @@ function setupEventListeners() {
 
         //interazione con oggetti
         if (e.key.toLowerCase() === 'f') {
+
+            // --- NUOVO: INTERAZIONE CON LA CONSOLE ---
+            if (scifiConsole && player.position.distanceTo(scifiConsole.position) < 4) {
+                const consoleUI = document.getElementById('console-ui');
+                
+                if (!isConsoleScreenOpen) {
+                    consoleUI.style.display = 'block'; // Mostra la UI Sci-Fi
+                    isConsoleScreenOpen = true;
+                    
+                    // Rimuove l'esclamativo se è la prima volta
+                    if (!hasInteractedWithConsole) {
+                        hasInteractedWithConsole = true;
+                        if (consoleIndicator) {
+                            scifiConsole.remove(consoleIndicator);
+                            consoleIndicator.geometry.dispose();
+                            consoleIndicator.material.dispose();
+                            consoleIndicator = null;
+                        }
+                    }
+                } else {
+                    consoleUI.style.display = 'none'; // Chiude la UI
+                    isConsoleScreenOpen = false;
+                }
+                return; // Esce dalla funzione così non attiva per sbaglio il bottone se fossero vicini
+            }
+
             // Controlliamo la distanza tra player e bottone
             const distance = player.position.distanceTo(buttonSwitch.position);
 
@@ -1770,6 +1844,7 @@ function setupEventListeners() {
     // Ascolta il movimento del mouse
     window.addEventListener('mousemove', (e) => {
         if (document.pointerLockElement === renderer.domElement) {
+            if (isConsoleScreenOpen) return; //to block mouse movement when console screen is open
             // Ruota il player sull'asse Y (sinistra/destra)
             player.rotation.y -= e.movementX * 0.002;
             
