@@ -75,7 +75,6 @@ function init() {
 
     createLights();
     createWorld();
-    createSciFiCable();
     setupEventListeners();
     const starField = createStars();
     
@@ -539,7 +538,6 @@ function createSciFiCeiling() {
 
 
 // --- LOGICA DI ILLUMINAZIONE FISICA ---
-// --- LOGICA DI ILLUMINAZIONE FISICA ---
 function getIntensityOnObject(lightSource, targetObj) {
     const lightPos = new THREE.Vector3();
     lightSource.getWorldPosition(lightPos);
@@ -697,19 +695,15 @@ function updateDoor() {
     }
 }
 
-function createSciFiCable() {
-    // Definiamo i punti di snodo del cavo per farlo sembrare agganciato alle pareti
-    const points = [
-        new THREE.Vector3(-19, 1, 14),     // 1. Parte dal retro del bottone
-        new THREE.Vector3(-19, 1, 12.5),     // 2. Scende subito al pavimento
-        new THREE.Vector3(-19, 3, 10),    // 3. Va dritto verso il muro posteriore
-        new THREE.Vector3(-19, 5, 9.0), // 4. Segue la linea del muro fino all'angolo sinistro
-        new THREE.Vector3(-19, 6, 3.0),    // 5. Cammina sul pavimento fino a trovarsi sotto la luce
-        new THREE.Vector3(-19.5, 5.5, -10.0),     // 6. Sale dritto sul muro fino all'altezza della lampada
-    ];
+function createSciFiCable(pointsArray) {
+    // Controllo di sicurezza: servono almeno 2 punti per tracciare una curva!
+    if (!pointsArray || pointsArray.length < 2) {
+        console.warn("createSciFiCable: Servono almeno 2 punti (Vector3) per creare un cavo.");
+        return null;
+    }
 
     // Creiamo una curva morbida che unisce questi punti
-    const cableCurve = new THREE.CatmullRomCurve3(points);
+    const cableCurve = new THREE.CatmullRomCurve3(pointsArray);
 
     // Generiamo la geometria del tubo: (curva, segmenti, raggio del cavo, segmenti radiali, chiuso)
     // Un raggio di 0.04 lo rende un cavo sottile ma ben visibile
@@ -752,6 +746,9 @@ function createWorld() {
     const floorTex = textureLoader.load('./textures/floor.png');
     const wallTex = textureLoader.load('./textures/wall_texture.jpg');
     const doorTex = textureLoader.load('./textures/door.png');
+    const platformTex = textureLoader.load('./textures/debris.png');
+    platformTex.wrapS = THREE.RepeatWrapping;
+    platformTex.wrapT = THREE.RepeatWrapping;
     wallTex.wrapS = THREE.RepeatWrapping;
     wallTex.wrapT = THREE.RepeatWrapping;
     wallTex.repeat.set(1, 1);
@@ -824,6 +821,16 @@ function createWorld() {
     createWallRadar(8, 4, -19.4, 0);
 
     createSciFiCeiling();
+
+    const mainCablePoints = [
+        new THREE.Vector3(-19, 1, 14),     
+        new THREE.Vector3(-19, 1, 12.5),     
+        new THREE.Vector3(-19, 3, 10),    
+        new THREE.Vector3(-19, 5, 9.0), 
+        new THREE.Vector3(-19, 6, 3.0),    
+        new THREE.Vector3(-19.5, 5.5, -10.0),     
+    ];
+    createSciFiCable(mainCablePoints);
 
     // --- SENSORI E INTERRUTTORI (Posizioni regolate) ---
     loader.load('./models/Untitled.glb', (gltf) => {
@@ -1065,16 +1072,35 @@ function createWorld() {
     player.add(playerGlow);
 
     // --- PERCORSO ESTERNO (Distanze Scalate x2) ---
-    addPlatform(0, 0, -30, 4, 4, floorTex); // Prima piattaforma fuori (da -16 a -32)
-    addPlatform(0, 0.5, -40, 3, 3, null, false, 'shadow'); // (da -22 a -44)
-    addPlatform(0, 1, -50, 3, 3, floorTex); // (da -28 a -56)
-    addPlatform(0, 1.5, -62, 3, 3, floorTex, true); // (da -35 a -70)
-    platforms[platforms.length - 1].userData.moveAxis = 'x';
-    platforms[platforms.length - 1].userData.startX = 0;
-    
-    addPlatform(9, 2, -71, 2, 2, floorTex, false, 'light-only'); // Scalata X da 5 a 10 e Z da -42 a -84
-    addPlatform(0, 2.5, -85, 6, 6, floorTex); // (da -50 a -100)
+    // Inizio: Piattaforma di ingresso (Stabile)
+    addPlatform(0, 0, -25, 5, 5, platformTex, false, 'normal', 'wreckage-A', true);
 
+    // 1. Primo bivio: A sinistra (Light) o Centro (Normal)
+    addPlatform(-6, 0.2, -35, 3, 3, platformTex, false, 'light-only', 'wreckage-B', true); 
+    addPlatform(2, 0.3, -32, 4, 4, platformTex, false, 'normal', 'wreckage-C', true);
+
+    // 2. Proseguimento centrale
+    addPlatform(5, 0.5, -42, 3, 3, platformTex, true, 'normal', 'wreckage-A', true); // Moving
+    platforms[platforms.length - 1].userData.moveAxis = 'x';
+
+    // 3. Secondo bivio: A destra (Shadow - occhio!) o Sinistra (Normal)
+    addPlatform(8, 0.7, -52, 3, 3, null, false, 'shadow', 'wreckage-C', true); 
+    addPlatform(0, 0.8, -55, 4, 4, platformTex, false, 'normal', 'wreckage-B', true);
+
+    // 4. Curva accentuata verso sinistra
+    addPlatform(-5, 1.0, -65, 3, 3, platformTex, true, 'normal', 'wreckage-C', true); // Moving
+    platforms[platforms.length - 1].userData.moveAxis = 'z';
+
+    // 5. Piattaforma di "riposo" centrale
+    addPlatform(-8, 1.2, -75, 5, 5, platformTex, false, 'normal', 'wreckage-A', true);
+
+    // 6. Terzo bivio: Shadow (difficile) o Light (più facile ma devi trovarla)
+    addPlatform(-12, 1.5, -85, 3, 3, null, false, 'shadow', 'wreckage-B', true);
+    addPlatform(-4, 1.4, -88, 3, 3, platformTex, false, 'light-only', 'wreckage-C', true);
+
+    // 7. Salto finale verso l'esterno sinistro
+    addPlatform(-15, 1.8, -95, 4, 4, platformTex, false, 'normal', 'wreckage-A', true);
+    addPlatform(-20, 2.0, -106, 6, 6, platformTex, false, 'normal', 'wreckage-C', true); // Piattaforma grande finale
 
     // --- IL SOLE ---
 
@@ -1426,45 +1452,207 @@ function addWall(x, y, z, w, h, d, color = 0x777777, texture = null) {
     return wall;
 }
 
-// Funzione helper per aggiungere piattaforme
-function addPlatform(x, y, z, w, d, texture, isMoving = false, type = 'normal') {
-    const geo = new THREE.BoxGeometry(w, 0.5, d);
-    let mat;
+// Funzione helper per aggiungere piattaforme/rottami
 
-    if (type === 'shadow') {
-        mat = new THREE.MeshStandardMaterial({ 
-            color: 0x000000, 
-            emissive: 0x0000ff, 
-            transparent: true 
-        });
-    } else if (type === 'light-only') {
-        mat = new THREE.MeshStandardMaterial({ 
-            map: texture, 
-            transparent: true, 
-            opacity: 0 // Partiamo da invisibile
-        });
-    } else {
-        mat = new THREE.MeshStandardMaterial({ map: texture });
-    }
+function addPlatform(x, y, z, w, d, texture, isMoving = false, type = 'normal', shape = 'square', wobble = false) {
+    let geo;
 
-    const plat = new THREE.Mesh(geo, mat);
-    plat.position.set(x, y, z);
-    plat.castShadow = true;
-    plat.receiveShadow = true;
-    // Settaggio iniziale dello stato
-    plat.userData = { 
-        isMoving: isMoving, 
-        startZ: z, 
-        time: 0, 
-        type: type, 
-        active: (type === 'normal' || type === 'shadow') 
-    };
-    
-    // Se è di tipo light-only, la nascondiamo subito
-    if (type === 'light-only') plat.visible = false;
+    // --- 1. DISEGNO DEI FRAMMENTI DI NAVE IRREGOLARI ---
+    if (shape === 'wreckage-A') {
+        // Forma 1: Lamiera frastagliata a "L"
+        const s = new THREE.Shape();
+        s.moveTo(-w/2, -d/2);
+        s.lineTo(w/2 * 0.8, -d/2 * 0.9); // Bordo storto
+        s.lineTo(w/2, -d/2 * 0.2);       // Spacco profondo
+        s.lineTo(w/2 * 0.7, 0);
+        s.lineTo(w/2, d/2 * 0.8);
+        s.lineTo(w/2 * 0.3, d/2);
+        s.lineTo(-w/2 * 0.7, d/2 * 0.9);
+        s.lineTo(-w/2 * 0.9, 0);
+        s.lineTo(-w/2, -d/2);
 
-    scene.add(plat);
-    platforms.push(plat);
+        // Gonfiamo il disegno in 3D e smussiamo i bordi (bevel) per renderli metallici
+        geo = new THREE.ExtrudeGeometry(s, { depth: 0.5, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05, bevelSegments: 1 });
+        geo.rotateX(Math.PI / 2); // Lo sdraiamo a terra
+        geo.translate(0, 0.25, 0); // Lo centriamo sull'asse Y per le collisioni
+
+        // Applichiamo una proiezione cubica manuale alle UV
+        const pos = geo.attributes.position;
+        const uvs = [];
+
+        for (let i = 0; i < pos.count; i++) {
+            const x = pos.getX(i);
+            const y = pos.getY(i);
+            const z = pos.getZ(i);
+
+            // Proiezione basata sulla posizione: 
+            // "avvolge" la texture attorno all'oggetto
+            uvs.push(x / w, z / d); 
+        }
+
+        geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+
+        // IL TRUCCO DELLE COLLISIONI: Falsifichiamo i parametri per ingannare animate()
+        geo.parameters = { width: w, height: 0.5, depth: d };
+
+    } else if (shape === 'wreckage-B') {
+        // Forma 2: Ponte di volo spezzato a metà da un asteroide
+        const s = new THREE.Shape();
+        s.moveTo(-w/2, -d/2);
+        s.lineTo(w/2, -d/2);
+        s.lineTo(w/2, d/2);
+        s.lineTo(-w/2 * 0.2, d/2); 
+        s.lineTo(-w/2 * 0.5, d/2 * 0.5); // Area distrutta verso l'interno
+        s.lineTo(-w/2 * 0.1, 0); 
+        s.lineTo(-w/2, -d/2 * 0.5);
+        s.lineTo(-w/2, -d/2);
+
+        geo = new THREE.ExtrudeGeometry(s, { depth: 0.5, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05, bevelSegments: 1 });
+        geo.rotateX(Math.PI / 2);
+        geo.translate(0, 0.25, 0);
+
+        // Applichiamo una proiezione cubica manuale alle UV
+        const pos = geo.attributes.position;
+        const uvs = [];
+
+
+        //PER LE TEXTURE, MODIFICARE MAGARI USANDO MODELLI BLENDER
+        for (let i = 0; i < pos.count; i++) {
+            const x = pos.getX(i);
+            const y = pos.getY(i);
+            const z = pos.getZ(i);
+
+            // Proiezione basata sulla posizione: 
+            // "avvolge" la texture attorno all'oggetto
+            uvs.push(x / w, z / d); 
+        }
+
+        geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+        
+        // TRUCCO COLLISIONI
+        geo.parameters = { width: w, height: 0.5, depth: d };
+
+    } else if (shape === 'wreckage-C') {
+        // Forma 3: Frammento "a croce" o strutturale (tipico di una trave spezzata)
+        const s = new THREE.Shape();
+        s.moveTo(-w/2, -d/4);
+        s.lineTo(-w/4, -d/4);
+        s.lineTo(-w/5, -d/2);
+        s.lineTo(w/4, -d/2);
+        s.lineTo(w/3, -d/4);
+        s.lineTo(w/2, -d/5);
+        s.lineTo(w/2, d/4);
+        s.lineTo(w/3, d/3);
+        s.lineTo(w/3.5, d/3);
+        s.lineTo(-w/4, d/2);
+        s.lineTo(-w/5, d/4);
+        s.lineTo(-w/2, d/4);
+
+        geo = new THREE.ExtrudeGeometry(s, { depth: 0.5, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05, bevelSegments: 1 });
+        geo.rotateX(Math.PI / 2);
+        geo.translate(0, 0.25, 0);
+
+        // Applichiamo una proiezione cubica manuale alle UV
+        const pos = geo.attributes.position;
+        const uvs = [];
+
+        for (let i = 0; i < pos.count; i++) {
+            const x = pos.getX(i);
+            const y = pos.getY(i);
+            const z = pos.getZ(i);
+
+            // Proiezione basata sulla posizione: 
+            // "avvolge" la texture attorno all'oggetto
+            uvs.push(x / w, z / d); 
+        }
+
+        geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+
+        geo.parameters = { width: w, height: 0.5, depth: d };
+    } else {
+        // Quadrato classico di default
+        geo = new THREE.BoxGeometry(w, 0.5, d);
+    }
+
+    // --- 2. MATERIALI ---
+    let mat;
+    if (type === 'shadow') {
+        mat = new THREE.MeshStandardMaterial({ 
+            color: 0x000000, 
+            emissive: 0x0000ff, 
+            transparent: true 
+        });
+    } else if (type === 'light-only') {
+        mat = new THREE.MeshStandardMaterial({ 
+            map: texture, 
+            transparent: true, 
+            opacity: 0 
+        });
+    } else {
+        // Materiale più consono a rottami spaziali
+        mat = new THREE.MeshStandardMaterial({ 
+            map: texture,
+            metalness: 0.6,
+            roughness: 0.4 
+        });
+    }
+
+    const plat = new THREE.Mesh(geo, mat);
+    plat.position.set(x, y, z);
+    plat.castShadow = true;
+    plat.receiveShadow = true;
+
+    // --- 3. CAVI ROTTI E MENO INGOMBRANTI ---
+    if (type === 'normal' || type === 'shadow') {
+        const brokenCablesCount = Math.floor(Math.random() * 3) + 1; // 1 o 3 cavi
+        
+        //MODIFICARE USANDO FUNZIONE APPOSTA
+        for (let i = 0; i < brokenCablesCount; i++) {
+            // Scegliamo un punto casuale LUNGO IL PERIMETRO (i bordi) usando un po' di trigonometria
+            const randomAngle = Math.random() * Math.PI * 2;
+            // Posizioniamo il cavo all'85% della distanza dal centro (quindi sui bordi)
+            const localStartX = Math.cos(randomAngle) * (w / 2) * 0.85;
+            const localStartZ = Math.sin(randomAngle) * (d / 2) * 0.85;
+
+            // Cavi molto più corti e dinamici
+            const cablePoints = [
+                new THREE.Vector3(localStartX, -0.25, localStartZ), 
+                new THREE.Vector3(localStartX + (Math.random() - 0.5) * 0.2, -0.6, localStartZ + (Math.random() - 0.5) * 0.2), 
+                new THREE.Vector3(localStartX + (Math.random() - 0.5) * 0.5, -0.9, localStartZ + (Math.random() - 0.5) * 0.5)  
+            ];
+
+            const cableCurve = new THREE.CatmullRomCurve3(cablePoints);
+            // Raggio del tubo dimezzato (0.015 invece di 0.03) -> Molto più snelli!
+            const cableGeo = new THREE.TubeGeometry(cableCurve, 16, 0.015, 6, false);
+            
+            const brokenCableMat = new THREE.MeshStandardMaterial({
+                color: 0x111111,
+                metalness: 0.8,
+                emissive: type === 'shadow' ? 0xc30010 : 0xc30010, 
+                emissiveIntensity: 1.2
+            });
+
+            const cableMesh = new THREE.Mesh(cableGeo, brokenCableMat);
+            plat.add(cableMesh);
+        }
+    }
+
+    // --- 4. DATI DI STATO (Intatti per il tuo animate) ---
+    plat.userData = {
+        id: Math.random() * 100,
+        isMoving: isMoving, 
+        startZ: z, 
+        startX: x,
+        time: 0, 
+        type: type, 
+        active: (type === 'normal' || type === 'shadow'),
+        wobble: wobble 
+    };
+    
+    if (type === 'light-only') plat.visible = false;
+
+    scene.add(plat);
+    platforms.push(plat);
 }
 
 // --- 4. ANIMAZIONE E LOGICA ---
@@ -1592,6 +1780,12 @@ function animate() {
     if (crystal1) crystal1.position.y = 2 + Math.sin(currenttime) * 17;
     if (crystal2) crystal2.position.y = 2 + Math.sin(currenttime) * 17;
 
+    //oscillazione piattaforme
+    platforms.forEach(plat => {
+        if (plat && plat.userData.wobble) {
+            plat.position.y += Math.sin(currenttime + plat.userData.id) * 0.005; // Oscillazione verticale leggera
+        }
+    });
 
     // 1. Il Sole ruota lentamente su se stesso
     if (sunMesh) {
@@ -1623,7 +1817,7 @@ function animate() {
     //intergrazione seconda legge di Keplero per il sistema binario
     if (binaryPivot && planet5 && planet6) {
         // 1. Estraiamo il valore del seno per usarlo in due posti (oscilla sempre tra -1 e 1)
-        const sineWave = Math.sin(currenttime); 
+        const sineWave = Math.sin(1.5 * currenttime); 
 
         // 2. Rotazione variabile
         binaryPivot.rotation.y += Math.max(0.01, 0.05 * sineWave);
