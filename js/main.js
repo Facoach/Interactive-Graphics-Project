@@ -44,6 +44,8 @@ let isButtonAnimating = false; // Impedisce lo spam del tasto F durante il movim
 let blackHoleGroup, accretionDisk;
 let galaxy;
 
+let cometOrbitGroup, cometGroup, cometTail;
+
 let holoSystem;
 
 let radarBlip;    // Conterrà l'oggetto 3D del puntino
@@ -111,7 +113,7 @@ function createStars() {
     return stars; // Lo restituiamo se vogliamo farlo ruotare dopo
 }
 
-function createGalaxy() {
+function createGalaxy( x, y, z, coreColorInput = '#ffe6aa', armColorInput = '#ff00aa') {
     const particleCount = 15000; // Numero di stelle nella galassia
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(particleCount * 3);
@@ -120,8 +122,8 @@ function createGalaxy() {
     // Parametri della galassia
     const arms = 3;             // Numero di bracci della spirale
     const galaxyRadius = 80;    // Raggio della galassia
-    const coreColor = new THREE.Color('#ffe6aa'); // Centro caldo (giallo/bianco)
-    const armColor = new THREE.Color('#ff00aa');  // Bracci freddi (viola/magenta)
+    const coreColor = new THREE.Color(coreColorInput); // Centro caldo (giallo/bianco)
+    const armColor = new THREE.Color(armColorInput);  // Bracci freddi (viola/magenta)
 
     for (let i = 0; i < particleCount; i++) {
         // 1. POSIZIONE
@@ -170,7 +172,7 @@ function createGalaxy() {
     
     // Posizioniamo la galassia LONTANISSIMA nel cielo
     // Scegli coordinate molto grandi (es. x: 500, y: 300, z: -600)
-    galaxy.position.set(-800, 400, -400);
+    galaxy.position.set(x, y, z);
     
     // Ruotiamola leggermente per vederla "di taglio/in diagonale" (più suggestiva)
     galaxy.rotation.x = 0.6;
@@ -1363,6 +1365,98 @@ function createWorld() {
     });
     */
 
+    // --- LA COMETA ---
+    // 1. Gruppo principale posizionato esattamente sul Sole
+    cometOrbitGroup = new THREE.Group();
+    cometOrbitGroup.position.copy(sunPosition); 
+
+    // INCLINAZIONE: Ruotiamo il piano dell'orbita per non renderlo parallelo agli altri pianeti
+    cometOrbitGroup.rotation.x = 0.7; // Inclinazione trasversale
+    cometOrbitGroup.rotation.z = 0.3; // Inclinazione longitudinale
+    scene.add(cometOrbitGroup);
+
+    // 2. Gruppo locale della cometa (conterrà nucleo + scia)
+    cometGroup = new THREE.Group();
+    cometGroup.userData = { theta: 0 }; // Angolo iniziale dell'orbita
+    cometOrbitGroup.add(cometGroup);
+
+    // 3. Il Nucleo della cometa (una sfera luminosa)
+    const cometCoreGeo = new THREE.SphereGeometry(1.5, 16, 16);
+    const cometCoreMat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        emissive: 0x88ffff, // Bagliore azzurro glaciale
+        emissiveIntensity: 3.0,
+        fog: false
+    });
+    const cometCore = new THREE.Mesh(cometCoreGeo, cometCoreMat);
+    cometGroup.add(cometCore);
+
+    // 4. La Scia di Particelle (Sistema ottimizzato)
+    const CometparticleCount = 1500; // Ottimo compromesso tra densità e prestazioni
+    const tailLength = 45;      // Lunghezza della coda
+    
+    const tailGeo = new THREE.BufferGeometry();
+    const tailPositions = new Float32Array(CometparticleCount * 3);
+    const tailColors = new Float32Array(CometparticleCount * 3);
+
+    // Colori della scia: da bianco/azzurro incandescente (vicino al nucleo) a blu scuro (alla fine)
+    const colorHead = new THREE.Color(0xe6ffff); 
+    const colorTail = new THREE.Color(0x0022cc);
+
+    for (let i = 0; i < CometparticleCount; i++) {
+        // La posizione Z va da 0 (vicino al nucleo) a tailLength (lontano)
+        // NOTA: Usiamo valori positivi di Z. Poiché lookAt punta l'asse -Z verso il Sole,
+        // posizionare le particelle su +Z le farà allungare perfettamente dalla parte opposta!
+        const z = Math.random() * tailLength;
+
+        // La scia si allarga man mano che ci si allontana dal nucleo
+        const spread = (z / tailLength) * 5; 
+        
+        // Distribuzione circolare casuale (crea la forma del cono)
+        const angle = Math.random() * Math.PI * 2;
+        // Concentriamo più particelle al centro del cono e meno sui bordi esterni
+        const radius = Math.pow(Math.random(), 2) * spread;
+
+        const x = Math.cos(angle) * radius;
+        const y = Math.sin(angle) * radius;
+
+        const i3 = i * 3;
+        tailPositions[i3] = x;
+        tailPositions[i3 + 1] = y;
+        tailPositions[i3 + 2] = z;
+
+        // Sfumiamo il colore in base alla distanza Z dal nucleo
+        const mixedColor = colorHead.clone();
+        mixedColor.lerp(colorTail, z / tailLength);
+        
+        tailColors[i3] = mixedColor.r;
+        tailColors[i3 + 1] = mixedColor.g;
+        tailColors[i3 + 2] = mixedColor.b;
+    }
+
+    tailGeo.setAttribute('position', new THREE.BufferAttribute(tailPositions, 3));
+    tailGeo.setAttribute('color', new THREE.BufferAttribute(tailColors, 3));
+    tailGeo.rotateX(Math.PI );
+
+    const tailMat = new THREE.PointsMaterial({
+        size: 0.5,                  // Grandezza della singola particella
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.6,
+        blending: THREE.AdditiveBlending, // Somma i colori creando un bagliore intenso al centro
+        depthWrite: false,          // Previene i fastidiosi "quadrati neri" di sovrapposizione
+        fog: false
+    });
+
+    cometTail = new THREE.Points(tailGeo, tailMat);
+    
+    // IMPORTANTE: Spostiamo leggermente la coda all'indietro per non farla compenetrare col nucleo
+    cometTail.position.z = 1.0; 
+    
+    cometGroup.add(cometTail);
+
+
+
     // --- IL BUCO NERO ---
     blackHoleGroup = new THREE.Group();
     // Posizionalo esattamente sotto la stanza iniziale, molto in profondità
@@ -1431,7 +1525,8 @@ function createWorld() {
 
     scene.add(blackHoleGroup);
 
-    createGalaxy();
+    createGalaxy(-800, 400, -400);
+    createGalaxy(200, 600, 1000, '#ffe6aa', '#15ff00');
 }
 
 
@@ -1851,6 +1946,64 @@ function animate() {
     // 4. La luna gira attorno al pianeta 2 
     if (moonPivot) {
         moonPivot.rotation.y += 0.015;
+    }
+
+
+    // --- FISICA E LOGICA DELLA COMETA ---
+    if (cometGroup && sunMesh && cometTail) {
+        // 1. Dimensioni dell'ellisse
+        const a = 550; // Semi-asse maggiore (lunghezza)
+        const b = 320; // Semi-asse minore (larghezza)
+
+        // 2. Calcolo del Fuoco (Distanza dal centro)
+        // Formula: c = radice quadrata di (a^2 - b^2)
+        const c = Math.sqrt((a * a) - (b * b)); 
+
+        // 3. Spostiamo l'ellisse! 
+        // Sottraendo 'c' ad 'a * cos', mettiamo il Sole esattamente nel fuoco dell'ellisse.
+        const xLoc = (a * Math.cos(cometGroup.userData.theta)) - c;
+        const zLoc = b * Math.sin(cometGroup.userData.theta);
+        cometGroup.position.set(xLoc, 0, zLoc);
+
+        // 4. LA SCIA PERFETTA
+        // Ora diciamo alla cometa di guardare la posizione GLOBALE del Sole.
+        // Così facendo, il suo "muso" punta al sole e la scia si allunga perfettamente alle sue spalle.
+        cometGroup.lookAt(sunMesh.position);
+
+        // 5. SECONDA LEGGE DI KEPLERO (Velocità variabile)
+        // distanceToSun ora è la distanza reale dal fuoco
+        const distanceToSun = cometGroup.position.length();
+    
+        // La velocità è inversamente proporzionale alla distanza.
+        // Quando passa vicinissima al sole (perielio) schizzerà a gran velocità, 
+        // quando è lontana (afelio) sembrerà quasi ferma.
+        const orbitSpeed = 20 / distanceToSun;
+        
+        //la lunghezza della coda si adatta alla distanza dal sole (più vicina = coda più lunga, più lontana = coda più corta)
+        cometTail.scale.z = 0.4 + 200/distanceToSun; // La coda si allunga drasticamente quando è vicina al sole
+
+        // Moltiplicatore 0.02 per bilanciare i frame e non farla andare a scatti
+        cometGroup.userData.theta += orbitSpeed * 0.02; 
+    }
+
+    // --- ANIMAZIONE FLUIDA DELLA CODA (Zero impatto sulle prestazioni) ---
+    if (cometTail) {
+        const tail = cometTail;
+        
+        // Usiamo il tempo corrente per creare oscillazioni fluide
+        const time = Date.now() * 0.004; 
+
+        // 1. EFFETTO VORTICE
+        // Facciamo ruotare la coda sul suo asse. Le particelle sembreranno 
+        // turbinare come in un vero flusso di plasma energetico.
+        tail.rotation.z += 0.1;
+
+        // 2. EFFETTO FOLATA (Vento Solare instabile)
+        // Usiamo Math.sin e Math.cos per far "sfarfallare" leggermente il diametro della coda.
+        // Il moltiplicatore 0.04 significa un'oscillazione massima del 4%, molto naturale.
+        tail.scale.x = 1.0 + Math.sin(time) * 0.1;
+        tail.scale.y = 1.0 + Math.cos(time * 1.2) * 0.1;
+
     }
 
     // ROTAZIONE DEL BUCO NERO
