@@ -43,6 +43,7 @@ let isButtonAnimating = false; // Impedisce lo spam del tasto F durante il movim
 
 let blackHoleGroup, accretionDisk;
 let galaxy;
+let galaxies = [];
 
 let cometOrbitGroup, cometGroup, cometTail;
 
@@ -55,6 +56,12 @@ let scifiConsole = null;             // Conterrà il modello 3D della console
 let consoleIndicator = null;         // Il flag visivo (!)
 let isConsoleScreenOpen = false;     // Stato della UI aperta/chiusa
 let hasInteractedWithConsole = false; // Controlla se è la prima volta che si legge
+
+let ReactorModel = null;
+let isReactorPickedUp = false; // Ci serve per sapere se l'abbiamo già preso
+
+let reactorPedestal = null; // Il gruppo dell'intero piedistallo
+let isReactorPlaced = false;// Stato del gioco
 
 
 const promptUI = document.getElementById('interaction-prompt');
@@ -178,7 +185,7 @@ function createGalaxy( x, y, z, coreColorInput = '#ffe6aa', armColorInput = '#ff
     galaxy.rotation.x = 0.6;
     galaxy.rotation.z = 0.2;
 
-    scene.add(galaxy);
+    galaxies.push(galaxy);
 }
 
 // Genera un tavolo olografico fantascientifico
@@ -538,6 +545,69 @@ function createSciFiCeiling() {
     //walls.push(ceilingBase); 
 }
 
+// Crea un piedistallo in stile "Nomai" (Outer Wilds) per il reattore
+function addReactorPedestal(x, y, z) {
+    reactorPedestal = new THREE.Group();
+    reactorPedestal.position.set(x, y, z);
+
+    // --- MATERIALI ---
+    // Pietra scura e rovinata per la base
+    const stoneMat = new THREE.MeshStandardMaterial({ 
+        color: 0x1a1a24, 
+        roughness: 0.9, 
+        metalness: 0.1 
+    });
+    // Metallo color rame/bronzo scuro tipico dei Nomai
+    const nomaiCopperMat = new THREE.MeshStandardMaterial({ 
+        color: 0x995533, 
+        roughness: 0.4, 
+        metalness: 0.8 
+    }); 
+    // Luce viola/blu della gravità
+    const warpGlowMat = new THREE.MeshStandardMaterial({ 
+        color: 0x000000, 
+        emissive: 0x5500ff, // Viola Nomai
+        emissiveIntensity: 2.0 
+    });
+
+    // --- GEOMETRIE ---
+    // 1. La Base (Esagonale)
+    // CylinderGeometry(raggioSuperiore, raggioInferiore, altezza, segmentiRadiali)
+    const baseGeo = new THREE.CylinderGeometry(1.5, 1.8, 0.4, 6); 
+    const base = new THREE.Mesh(baseGeo, stoneMat);
+    base.position.y = 0.2; // Sollevato per appoggiarsi sul pavimento
+    base.castShadow = true;
+    base.receiveShadow = true;
+    reactorPedestal.add(base);
+
+    // 2. Il Pilastro centrale in rame
+    const stemGeo = new THREE.CylinderGeometry(0.6, 0.9, 1.2, 6);
+    const stem = new THREE.Mesh(stemGeo, nomaiCopperMat);
+    stem.position.y = 1.0;
+    stem.castShadow = true;
+    stem.receiveShadow = true;
+    reactorPedestal.add(stem);
+
+    // 3. Anello fluttuante luminoso (Gira attorno al pilastro)
+    const ringGeo = new THREE.TorusGeometry(1.2, 0.05, 16, 6);
+    const ring = new THREE.Mesh(ringGeo, warpGlowMat);
+    ring.position.y = 1.0;
+    ring.rotation.x = Math.PI / 2;
+    // Lo salviamo in userData così possiamo farlo ruotare nell'animate()
+    reactorPedestal.userData.warpRing = ring; 
+    reactorPedestal.add(ring);
+
+    // 4. La Coppa Superiore (Dove alloggia il reattore)
+    const topGeo = new THREE.CylinderGeometry(1.0, 0.5, 0.4, 6);
+    const top = new THREE.Mesh(topGeo, stoneMat);
+    top.position.y = 1.8;
+    top.castShadow = true;
+    top.receiveShadow = true;
+    reactorPedestal.add(top);
+
+    scene.add(reactorPedestal);
+}
+
 
 // --- LOGICA DI ILLUMINAZIONE FISICA ---
 function getIntensityOnObject(lightSource, targetObj) {
@@ -821,6 +891,9 @@ function createWorld() {
 
     // Esempio d'uso (appeso sulla parete frontale, accanto alla porta):
     createWallRadar(8, 4, -19.4, 0);
+
+    //piedistallo del reattore al centro della stanza
+    addReactorPedestal(0, 0.5, 10);
 
     createSciFiCeiling();
 
@@ -1340,15 +1413,15 @@ function createWorld() {
         console.error("Errore nel caricamento del modello binario:", error);
     });
 
-    /*
+
     loader.load('./models/Reactor.glb', (gltf) => {
-        const model = gltf.scene;
+        ReactorModel = gltf.scene;
     
         // Configurazione Modello
-        model.scale.set(1, 1, 1); 
+        ReactorModel.scale.set(0.1, 0.1, 0.1); 
 
         // Rendiamo il modello capace di proiettare ombre
-        model.traverse((node) => {
+        ReactorModel.traverse((node) => {
             if (node.isMesh) {
                 node.castShadow = true;
                 node.receiveShadow = true;
@@ -1356,14 +1429,13 @@ function createWorld() {
         });
 
 
-        model.rotation.y = Math.PI;
-        model.position.set(0, 1.5, 0);
-        scene.add(model);
+        ReactorModel.rotation.y = Math.PI;
+        ReactorModel.position.set(-20, 2.5, -106);
+        scene.add(ReactorModel);
         console.log("Modello caricato correttamente");
     }, undefined, (error) => {
         console.error("Errore nel caricamento del modello:", error);
     });
-    */
 
     // --- LA COMETA ---
     // 1. Gruppo principale posizionato esattamente sul Sole
@@ -1538,6 +1610,10 @@ function createWorld() {
 
     createGalaxy(-800, 400, -400);
     createGalaxy(200, 600, 1000, '#ffe6aa', '#15ff00');
+    createGalaxy(1000, -300, -300, '#c4ecc4', '#ff0000');
+    galaxies.forEach(gal => {
+        scene.add(gal);
+    });
 }
 
 
@@ -2048,13 +2124,20 @@ function animate() {
     }
 
     //ROTAZIIONE GALASSIA
-    if (galaxy) {
-        galaxy.rotation.y += 0.0002; // Rotazione impercettibile e maestosa
-    }
+    galaxies.forEach(galaxy => {
+        galaxy.rotation.y += 0.0004; // Rotazione impercettibile e maestosa
+    });
 
     // --- FLUTTUAZIONE DEL PUNTO ESCLAMATIVO (!) ---
     if (consoleIndicator) {
         consoleIndicator.position.y = 3.5 + Math.sin(Date.now() * 0.004) * 0.15;
+    }
+
+    // Animazione anello piedistallo
+    if (reactorPedestal && reactorPedestal.userData.warpRing) {
+        // L'anello ruota su se stesso e fluttua leggermente su e giù
+        reactorPedestal.userData.warpRing.rotation.z += 0.01;
+        reactorPedestal.userData.warpRing.position.y = 1.0 + Math.sin(Date.now() * 0.002) * 0.1;
     }
 
     // --- SEZIONE UI (Controllo prossimità unificato) ---
@@ -2062,8 +2145,10 @@ function animate() {
         // Controlliamo se siamo vicini al bottone OPPURE alla console
         const isNearButton = buttonSwitch && player.position.distanceTo(buttonSwitch.position) < 3;
         const isNearConsole = scifiConsole && player.position.distanceTo(scifiConsole.position) < 4;
+        const isNearReactor = !isReactorPickedUp && ReactorModel && player.position.distanceTo(ReactorModel.position) < 2;
+        const isNearPedestal = isReactorPickedUp && reactorPedestal && player.position.distanceTo(reactorPedestal.position) < 3;
         
-        if (isNearButton || isNearConsole) {
+        if (isNearButton || isNearConsole || isNearReactor || isNearPedestal) {
             promptUI.style.display = 'block'; // Mostra "Press [F] to interact"
         } else {
             promptUI.style.display = 'none';  // Nasconde il suggerimento
@@ -2126,7 +2211,44 @@ function setupEventListeners() {
         //interazione con oggetti
         if (e.key.toLowerCase() === 'f') {
 
-            // --- NUOVO: INTERAZIONE CON LA CONSOLE ---
+            // --- NUOVO: RACCOLTA REATTORE ---
+            if (ReactorModel && !isReactorPickedUp) {
+                const distanceToReactor = player.position.distanceTo(ReactorModel.position);
+                
+                if (distanceToReactor < 2) {
+                    isReactorPickedUp = true;
+                    scene.remove(ReactorModel); // Rimuove il modello 3D dal mondo
+                    
+                    console.log("Reattore raccolto con successo!");
+                    
+                    // Chiudi la UI per evitare che il messaggio [F] resti bloccato a schermo
+                    const promptUI = document.getElementById('interaction-prompt');
+                    if (promptUI) promptUI.style.display = 'none';
+                    
+                    return; // "return" ferma la funzione. Così non premi per sbaglio anche il bottone se fosse vicino
+                }
+            }
+
+            // --- Colloca REATTORE ---
+            if (reactorPedestal && isReactorPickedUp) {
+                const distanceToPedestal = player.position.distanceTo(reactorPedestal.position);
+                
+                if (distanceToPedestal < 2) {
+                    isReactorPickedUp = false;
+                    ReactorModel.position.set(reactorPedestal.position.x, reactorPedestal.position.y + 2.5, reactorPedestal.position.z);
+                    scene.add(ReactorModel); // aggiunge il modello 3D al piedistallo
+                    
+                    console.log("Reattore collocato con successo!");
+                    
+                    // Chiudi la UI per evitare che il messaggio [F] resti bloccato a schermo
+                    const promptUI = document.getElementById('interaction-prompt');
+                    if (promptUI) promptUI.style.display = 'none';
+                    
+                    return; // "return" ferma la funzione. Così non premi per sbaglio anche il bottone se fosse vicino
+                }
+            }
+
+            // ---INTERAZIONE CON LA CONSOLE ---
             if (scifiConsole && player.position.distanceTo(scifiConsole.position) < 4) {
                 const consoleUI = document.getElementById('console-ui');
                 
