@@ -762,7 +762,7 @@ function createWorld() {
     floorTex.repeat.set(4, 4);
 
     // --- STANZA PRINCIPALE (Allargata a 40x40) ---
-    addPlatform(0, 0, 0, 40, 40, floorTex);
+    addPlatform(0, 0, 0, 41, 41, floorTex);
 
     // --- MURI (Ricalcolati per spazio 40x40) ---
     const h = 8; // Soffitto più alto per dare respiro (8 invece di 6)
@@ -1381,15 +1381,26 @@ function createWorld() {
     cometOrbitGroup.add(cometGroup);
 
     // 3. Il Nucleo della cometa (una sfera luminosa)
-    const cometCoreGeo = new THREE.SphereGeometry(1.5, 16, 16);
-    const cometCoreMat = new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        emissive: 0x88ffff, // Bagliore azzurro glaciale
-        emissiveIntensity: 3.0,
-        fog: false
+    loader.load('./models/Comet.glb', (gltf) => {
+        const model = gltf.scene;
+    
+        // Configurazione Modello
+        model.scale.set(1.5, 1.5, 1.5); 
+
+        // Rendiamo il modello capace di proiettare ombre
+        model.traverse((node) => {
+            if (node.isMesh) {
+                node.castShadow = true;
+                node.receiveShadow = true;
+            }
+        });
+
+        model.rotation.y = Math.PI;
+        cometGroup.add(model);
+        console.log("Modello caricato correttamente");
+    }, undefined, (error) => {
+        console.error("Errore nel caricamento del modello:", error);
     });
-    const cometCore = new THREE.Mesh(cometCoreGeo, cometCoreMat);
-    cometGroup.add(cometCore);
 
     // 4. La Scia di Particelle (Sistema ottimizzato)
     const CometparticleCount = 1500; // Ottimo compromesso tra densità e prestazioni
