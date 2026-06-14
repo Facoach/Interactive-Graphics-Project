@@ -63,6 +63,9 @@ let isReactorPickedUp = false; // Ci serve per sapere se l'abbiamo già preso
 let reactorPedestal = null; // Il gruppo dell'intero piedistallo
 let isReactorPlaced = false;// Stato del gioco
 
+let spoke1, spoke2; // I supporti dell'anello centrifuga
+let floorDisk; // Il disco del pavimento che si solleva
+
 
 const promptUI = document.getElementById('interaction-prompt');
 
@@ -88,6 +91,27 @@ function init() {
     const starField = createStars();
     
     animate();
+}
+
+function checkDiskCollision(player, disk) {
+    // Calcoliamo la distanza orizzontale dal centro del disco
+    const dX = player.position.x - disk.position.x;
+    const dZ = player.position.z - disk.position.z;
+    const distance = Math.sqrt(dX * dX + dZ * dZ);
+
+    const radius = 34; // Il raggio del tuo disco
+    const pHeight = 1; // Metà altezza della geometria del disco (saucerGeo ha altezza 2)
+    const topLevel = disk.position.y + pHeight + 0.5;
+
+    // Se il giocatore è sopra il disco
+    if (distance < radius) {
+        if (player.position.y <= topLevel && player.position.y > disk.position.y && velocityY <= 0) {
+            player.position.y = topLevel;
+            velocityY = 0;
+            return true; // Il giocatore è sul disco
+        }
+    }
+    return false;
 }
 
 function createStars() {
@@ -186,6 +210,250 @@ function createGalaxy( x, y, z, coreColorInput = '#ffe6aa', armColorInput = '#ff
     galaxy.rotation.z = 0.2;
 
     galaxies.push(galaxy);
+}
+
+function createSpaceshipExterior() {
+    const shipGroup = new THREE.Group();
+
+    // --- MATERIALI IN STILE NASA / HARD SCI-FI ---
+    const nasaWhiteMat = new THREE.MeshStandardMaterial({ 
+        color: 0xeeeeee, // Bianco ceramica spaziale
+        roughness: 0.9,  // Opaco, tipo scudo termico
+        metalness: 0.1 
+    });
+    const darkTrussMat = new THREE.MeshStandardMaterial({
+        color: 0x222225, // Metallo scuro per le strutture di supporto
+        roughness: 0.7,
+        metalness: 0.6
+    });
+    const solarMat = new THREE.MeshStandardMaterial({
+        color: 0x0a1530, // Blu notte per i pannelli fotovoltaici
+        roughness: 0.2,
+        metalness: 0.9
+    });
+    const goldFoilMat = new THREE.MeshStandardMaterial({
+        color: 0xcca622, // Kapton (la pellicola dorata tipica dei satelliti)
+        roughness: 0.5,
+        metalness: 0.8
+    });
+    const engineGlowMat = new THREE.MeshBasicMaterial({
+        color: 0x00aaff // Plasma azzurro
+    });
+
+    // --- 1. IL MODULO DI COMANDO (Ingloba la tua stanza quadrata) ---
+    // Mettiamo la stanza (40x40) a "panino" tra due enormi dischi circolari.
+    // Il raggio 32 copre perfettamente gli angoli della stanza, creando una tettoia
+    // sopra la porta e sopra la vetrata, senza bloccarne la vista!
+    const saucerGeo = new THREE.CylinderGeometry(34, 34, 2, 64);
+    
+    const roofDisk = new THREE.Mesh(saucerGeo, nasaWhiteMat);
+    roofDisk.position.set(0, 9.2, 0); // Appoggiato sopra il soffitto
+    shipGroup.add(roofDisk);
+
+    floorDisk = new THREE.Mesh(saucerGeo, nasaWhiteMat);
+    floorDisk.position.set(0, -1, 0); // Appoggiato sotto il pavimento
+    shipGroup.add(floorDisk);
+
+    // Un anello grigio attorno al tetto per spezzare il colore
+    // Bumper doppio (sopra e sotto)
+    const bumperGeo = new THREE.TorusGeometry(34, 0.8, 16, 64);
+    bumperGeo.rotateX(Math.PI / 2);
+    const bumperTop = new THREE.Mesh(bumperGeo, darkTrussMat);
+    bumperTop.position.set(0, 9.2, 0);
+    shipGroup.add(bumperTop);
+    
+    const bumperBottom = bumperTop.clone();
+    bumperBottom.position.set(0, -1.2, 0);
+    shipGroup.add(bumperBottom);
+
+
+    // --- 2. LA SPINA DORSALE (Estesa lontanissimo verso sinistra / asse -X) ---
+    // Questo è il corpo principale della nave. Essendo lungo e spostato,
+    // sarà perfettamente visibile quando esci dalla porta.
+    const spineGeo = new THREE.CylinderGeometry(8, 8, 135, 32);
+    spineGeo.rotateZ(Math.PI / 2); // Lo sdraiamo lungo l'asse X
+    const spine = new THREE.Mesh(spineGeo, nasaWhiteMat);
+    spine.position.set(-90, 4, 0); // Va da X = -20 a X = -160
+    shipGroup.add(spine);
+
+
+    // --- 3. L'ANELLO CENTRIFUGA (Gravity Ring) ---
+    // Un elemento classico della fantascienza, avvolge la spina dorsale.
+    const ringGeo = new THREE.TorusGeometry(35, 6, 32, 64);
+    ringGeo.rotateY(Math.PI / 2); // Lo ruotiamo in modo che "rotoli" sull'asse X
+    const gravityRing = new THREE.Mesh(ringGeo, nasaWhiteMat);
+    gravityRing.position.set(-70, 4, 0);
+    shipGroup.add(gravityRing);
+
+    // Supporti che collegano l'anello alla spina centrale
+    const spokeGeo = new THREE.CylinderGeometry(1.5, 1.5, 70, 16);
+    spoke1 = new THREE.Mesh(spokeGeo, darkTrussMat);
+    spoke1.position.set(-70, 4, 0);
+    shipGroup.add(spoke1);
+    
+    spoke2 = new THREE.Mesh(spokeGeo, darkTrussMat);
+    spoke2.position.set(-70, 4, 0);
+    spoke2.rotation.x = Math.PI / 2;
+    shipGroup.add(spoke2);
+
+
+    // --- 4. I PANNELLI SOLARI ---
+    // Enormi vele blu che sporgono lateralmente dalla nave, coperte d'oro alla base
+    const panelGeo = new THREE.BoxGeometry(20, 0.5, 80);
+    
+    const leftPanel = new THREE.Mesh(panelGeo, solarMat);
+    leftPanel.position.set(-110, 4, 45); // Sporge in avanti
+    shipGroup.add(leftPanel);
+
+    const rightPanel = new THREE.Mesh(panelGeo, solarMat);
+    rightPanel.position.set(-110, 4, -45); // Sporge all'indietro
+    shipGroup.add(rightPanel);
+
+    // Traliccio dorato che regge i pannelli
+    const panelTrussGeo = new THREE.CylinderGeometry(2, 2, 90, 16);
+    panelTrussGeo.rotateX(Math.PI / 2);
+    const panelTruss = new THREE.Mesh(panelTrussGeo, goldFoilMat);
+    panelTruss.position.set(-110, 4, 0);
+    shipGroup.add(panelTruss);
+
+
+    // --- 5. IL BLOCCO MOTORI (Lontanissimo a sinistra) ---
+    // Una struttura sferica con i propulsori attaccati in fondo alla spina.
+    const reactorGeo = new THREE.SphereGeometry(14, 32, 32);
+    const reactor = new THREE.Mesh(reactorGeo, nasaWhiteMat);
+    reactor.position.set(-160, 4, 0);
+    shipGroup.add(reactor);
+
+    // Tre enormi ugelli di scarico (Thrusters)
+    const bellGeo = new THREE.CylinderGeometry(3, 8, 12, 32);
+    bellGeo.rotateZ(Math.PI / 2); // Puntano verso -X
+
+    const thrusterPositions = [
+        { y: 8, z: 0 },   // Motore in alto
+        { y: 0, z: -8 },  // Motore in basso a destra
+        { y: 0, z: 8 }    // Motore in basso a sinistra
+    ];
+
+    thrusterPositions.forEach(pos => {
+        const bell = new THREE.Mesh(bellGeo, darkTrussMat);
+        bell.position.set(-170, pos.y, pos.z);
+        shipGroup.add(bell);
+
+        // Il plasma incandescente
+        const glowGeo = new THREE.SphereGeometry(4.5, 16, 16);
+        const glow = new THREE.Mesh(glowGeo, engineGlowMat);
+        glow.position.set(-172, pos.y, pos.z);
+        // Scala l'asse X per farlo sembrare una fiamma allungata
+        glow.scale.set(2, 1, 1);
+        shipGroup.add(glow);
+    });
+
+    // Luce ambientale emessa dai motori
+    const engineLight = new THREE.PointLight(0x00aaff, 5, 200);
+    engineLight.position.set(-180, 4, 0);
+    shipGroup.add(engineLight);
+
+
+    // --- 6. LA PRUA (TESTA DELLA NAVE - STILE ENTERPRISE RIALZATO) ---
+    const bowGroup = new THREE.Group();
+    
+    // A. Il "Collo" Inclinato (Pylon di collegamento)
+    // Usiamo un BoxGeometry inclinato verso l'alto per un look più solido e aerodinamico
+    const neckGeo = new THREE.BoxGeometry(30, 6, 10);
+    const neck = new THREE.Mesh(neckGeo, nasaWhiteMat);
+    // Lo posizioniamo a metà strada in alto (Y=10) e spostato a destra (X=46)
+    neck.position.set(36, 10, 0); 
+    // Lo incliniamo di 30 gradi verso l'alto
+    neck.rotation.z = Math.PI / 6; 
+    bowGroup.add(neck);
+
+    // B. Il Disco Principale (Saucer Section)
+    // Più spesso (altezza 4.5 invece di 2.5) e rialzato
+    const saucerRadius = 26;
+    const saucerFrontGeo = new THREE.CylinderGeometry(saucerRadius, saucerRadius - 3, 4.5, 64);
+    const mainSaucer = new THREE.Mesh(saucerFrontGeo, nasaWhiteMat);
+    mainSaucer.position.set(62, 17, 0); // Alzato a Y=17!
+    bowGroup.add(mainSaucer);
+
+    // Anello scuro (Bumper) più massiccio
+    const saucerBumperGeo = new THREE.TorusGeometry(saucerRadius, 0.8, 16, 64);
+    saucerBumperGeo.rotateX(Math.PI / 2);
+    const saucerBumper = new THREE.Mesh(saucerBumperGeo, darkTrussMat);
+    saucerBumper.position.set(62, 17, 0);
+    bowGroup.add(saucerBumper);
+
+    // C. Il Ponte di Comando (Bridge)
+    // Struttura rialzata proporzionata al nuovo disco
+    const bridgeBaseGeo = new THREE.CylinderGeometry(8, 12, 2, 64);
+    const bridgeBase = new THREE.Mesh(bridgeBaseGeo, nasaWhiteMat);
+    bridgeBase.position.set(62, 19.5, 0); 
+    bowGroup.add(bridgeBase);
+
+    // La Cupola del Ponte
+    const bridgeDomeGeo = new THREE.SphereGeometry(6, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+    const bridgeDome = new THREE.Mesh(bridgeDomeGeo, nasaWhiteMat);
+    bridgeDome.position.set(62, 20.5, 0);
+    bridgeDome.scale.set(1, 0.8, 1);
+    bowGroup.add(bridgeDome);
+
+    // D. La Vetrata Panoramica del Cockpit (Spostata alla nuova altezza)
+    const visorMat = new THREE.MeshStandardMaterial({ 
+        color: 0x050508, 
+        roughness: 0.1, 
+        metalness: 0.9 
+    });
+    const visorGeo = new THREE.CylinderGeometry(6.1, 6.1, 2, 32, 1, false, -Math.PI / 4, Math.PI / 2);
+    const visor = new THREE.Mesh(visorGeo, visorMat);
+    visor.position.set(62, 21.5, 0);
+    visor.rotation.y = -Math.PI / 2;
+    bowGroup.add(visor);
+
+    // E. Cupola Sensori Inferiore (Sotto il disco)
+    const lowerDomeGeo = new THREE.SphereGeometry(5, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+    const lowerDome = new THREE.Mesh(lowerDomeGeo, darkTrussMat);
+    lowerDome.position.set(62, 14.75, 0); // Sotto il nuovo disco a Y=17
+    lowerDome.rotation.x = Math.PI; 
+    lowerDome.scale.set(1, 0.5, 1);
+    bowGroup.add(lowerDome);
+
+    // F. Propulsori a Impulso (Sul retro del disco)
+    // Li spostiamo in alto, attaccati alla parte posteriore della nuova Saucer Section
+    const impulseGeo = new THREE.BoxGeometry(3, 2, 8);
+    
+    const leftImpulse = new THREE.Mesh(impulseGeo, darkTrussMat);
+    leftImpulse.position.set(40, 17.5, 8);
+    bowGroup.add(leftImpulse);
+    
+    const leftImpulseGlow = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.6, 7.6), engineGlowMat);
+    leftImpulseGlow.position.set(40, 17.5, 8);
+    bowGroup.add(leftImpulseGlow);
+
+    const rightImpulse = new THREE.Mesh(impulseGeo, darkTrussMat);
+    rightImpulse.position.set(40, 17.5, -8);
+    bowGroup.add(rightImpulse);
+
+    const rightImpulseGlow = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.6, 7.6), engineGlowMat);
+    rightImpulseGlow.position.set(40, 17.5, -8);
+    bowGroup.add(rightImpulseGlow);
+
+    // Aggiungiamo tutta la prua al gruppo principale
+    shipGroup.add(bowGroup);
+
+
+
+    // --- RENDERIZZAZIONE ---
+    shipGroup.traverse(child => {
+        if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+            // NOTA IMPORTANTE: Abbiamo RIMOSSO `walls.push(child)`. 
+            // Essendo una struttura che sporge sopra e sotto la stanza, 
+            // se avesse collisioni il giocatore si incastrerebbe uscendo dalla porta.
+            // I muri invisibili della tua stanza originale bastano e avanzano!
+        }
+    });
+
+    scene.add(shipGroup);
 }
 
 // Genera un tavolo olografico fantascientifico
@@ -496,11 +764,11 @@ function createSciFiCeiling() {
     // Creiamo una trave ogni 4 metri usando un ciclo for
     for (let i = -18; i <= 18; i += 4) {
         const beam = new THREE.Mesh(beamGeo, beamMat);
-        beam.position.set(0, -0.1, i);
+        beam.position.set(0, -0.09, i);
         ceilingGroup.add(beam);
         
         // Ogni due travi (quando 'i' è multiplo di 8), aggiungiamo una striscia LED
-        if (i % 8 === 0) {
+        if (i % 8 === 0 ) {
             // Il neon luminoso
             const ledGeo = new THREE.BoxGeometry(38, 0.05, 0.3);
             const ledMat = new THREE.MeshBasicMaterial({ color: 0x00aaff }); // Azzurro ciano
@@ -846,22 +1114,61 @@ function createWorld() {
     addWall(11.5, h/2, -20.5, 17, h, t, 0xffffff, wallTex);   // Davanti dx
     addWall(0, 6, -20.5, 6, 4, t, 0xffffff, wallTex);         // Trave alta sopra la porta
 
-    // --- LA VETRATA PANORAMICA (Dietro) ---
-    // Invece di un muro di pietra, creiamo un vetro oscurato e leggermente trasparente
-    const glassGeo = new THREE.BoxGeometry(40, h, t);
+    // --- LA VETRATA PANORAMICA IN STILE PONTE DI COMANDO (Dietro) ---
+    // Invece di un blocco piatto, creiamo una struttura a scomparti hi-tech.
+    
+    // 1. Muretto inferiore della vetrata (Bulkhead corazzato)
+    // Alto 1.5 unità, impedisce al vetro di toccare il pavimento
+    addWall(0, 0.75, 20.5, 41, 1.5, t, 0x2d323a, wallTex);
+
+    // 2. Trave superiore della vetrata (Veletta del soffitto)
+    // Scende dal soffitto per 1.5 unità (Altezza totale stanza = 8, quindi centrato a 7.25)
+    addWall(0, 7.25, 20.5, 41, 1.5, t, 0x2d323a, wallTex);
+
+    // 3. Montanti Verticali (Dividono la grande vetrata in 4 imponenti oblò panoramici)
+    // Sono spessi 1.5 unità, alti 5 (lo spazio tra i due muretti) e sporgono leggermente in 3D (depth = 1.4)
+    addWall(-10, 4.0, 20.5, 1.5, 5, 1.4, 0x3a414b, wallTex); // Pilastro Sx
+    addWall(0, 4.0, 20.5, 1.5, 5, 1.4, 0x3a414b, wallTex);  // Pilastro Centrale
+    addWall(10, 4.0, 20.5, 1.5, 5, 1.4, 0x3a414b, wallTex); // Pilastro Dx
+    
+    // Rinforzi angolari fissi ai due lati estremi della stanza
+    addWall(-20.25, 4.0, 20.5, 1, 5, 1.4, 0x2d323a, wallTex);
+    addWall(20.25, 4.0, 20.5, 1, 5, 1.4, 0x2d323a, wallTex);
+
+    // 4. Il Vetro Ottimizzato (Trucco: un unico grande pannello posizionato dietro al telaio)
+    // Essendo dietro ai pilastri, sembreranno 4 finestre separate, ma Three.js renderizzerà un solo oggetto!
+    const glassGeo = new THREE.BoxGeometry(40, 5, 0.2); 
     const glassMat = new THREE.MeshPhysicalMaterial({ 
-        color: 0x112244, 
+        color: 0x0c1a30,       // Blu profondo fantascientifico
         transparent: true, 
-        opacity: 0.3,     // Permette di vedere fuori!
-        roughness: 0.1, 
-        metalness: 0.5,
-        fog: false,         // Ignora la nebbia: non diventerà mai opaca in lontananza!
-        depthWrite: false   // Evita che il vetro "tagli" visivamente l'ologramma o la galassia dietro di esso
+        opacity: 0.4, 
+        roughness: 0.05, 
+        metalness: 0.9,
+        clearcoat: 1.0,        // Aggiunge lo strato lucido riflessivo tipico dei vetri spessi da astronave
+        clearcoatRoughness: 0.1,
+        fog: false, 
+        depthWrite: false   
     });
     const giantWindow = new THREE.Mesh(glassGeo, glassMat);
-    giantWindow.position.set(0, h/2, 20.5);
+    giantWindow.position.set(0, 4.0, 20.4); // Un millimetro davanti al muro posteriore per evitare bug visivi (z-fighting)
     scene.add(giantWindow);
-    walls.push(giantWindow); // Se vogliamo che anche il vetro sia colpito dalle ombre dinamiche
+
+
+    // --- COSTOLONI E ARCHI STRUTTURALI DELLA FUSELIERA (Hull Ribs) ---
+    // Posizioniamo grandi archi metallici ad anello lungo la stanza a intervalli regolari (Z = -10, 0, 10).
+    // Questo spezza completamente la forma a "cubo" della stanza dando un look cilindrico/industriale.
+    const ribPositionsZ = [-10, 0, 10]; 
+
+    ribPositionsZ.forEach(zPos => {
+        // Pilastro sporgente sulla parete di Sinistra (X interna della stanza = -20)
+        addWall(-19.8, h/2, zPos, 0.4, h, 1.5, 0x252a32, wallTex);
+        
+        // Pilastro sporgente sulla parete di Destra (X interna della stanza = 20)
+        addWall(19.8, h/2, zPos, 0.4, h, 1.5, 0x252a32, wallTex);
+        
+        // Trave sul soffitto che unisce i due pilastri laterali (Y interna del soffitto = 8)
+        addWall(0, 7.8, zPos, 40, 0.4, 1.5, 0x252a32, wallTex);
+    });
 
     // --- PORTA ---
     door = addWall(0, h/3, -20.5, 6, h, 0.4, 0x442200, doorTex);
@@ -896,6 +1203,8 @@ function createWorld() {
     addReactorPedestal(0, 0.5, 10);
 
     createSciFiCeiling();
+
+    createSpaceshipExterior();
 
     const mainCablePoints = [
         new THREE.Vector3(-19, 1, 14),     
@@ -1146,13 +1455,8 @@ function createWorld() {
     playerGlow.position.set(0, -0.5, 0);
     player.add(playerGlow);
 
-    // --- PERCORSO ESTERNO (Distanze Scalate x2) ---
-    // Inizio: Piattaforma di ingresso (Stabile)
-    addPlatform(0, 0, -25, 5, 5, platformTex, false, 'normal', 'wreckage-A', true);
+    // --- PERCORSO ESTERNO (Distanze Scalate ) ---
 
-    // 1. Primo bivio: A sinistra (Light) o Centro (Normal)
-    addPlatform(-6, 0.2, -35, 3, 3, platformTex, false, 'light-only', 'wreckage-B', true); 
-    addPlatform(2, 0.3, -32, 4, 4, platformTex, false, 'normal', 'wreckage-C', true);
 
     // 2. Proseguimento centrale
     addPlatform(5, 0.5, -42, 3, 3, platformTex, true, 'normal', 'wreckage-A', true); // Moving
@@ -1160,22 +1464,41 @@ function createWorld() {
 
     // 3. Secondo bivio: A destra (Shadow - occhio!) o Sinistra (Normal)
     addPlatform(8, 0.7, -52, 3, 3, null, false, 'shadow', 'wreckage-C', true); 
-    addPlatform(0, 0.8, -55, 4, 4, platformTex, false, 'normal', 'wreckage-B', true);
+    addPlatform(0, 0.8, -60, 4, 4, platformTex, false, 'normal', 'wreckage-B', true);
 
     // 4. Curva accentuata verso sinistra
-    addPlatform(-5, 1.0, -65, 3, 3, platformTex, true, 'normal', 'wreckage-C', true); // Moving
+    addPlatform(-8, 1.0, -70, 3, 3, platformTex, true, 'normal', 'wreckage-C', true); // Moving
     platforms[platforms.length - 1].userData.moveAxis = 'z';
 
     // 5. Piattaforma di "riposo" centrale
-    addPlatform(-8, 1.2, -75, 5, 5, platformTex, false, 'normal', 'wreckage-A', true);
+    addPlatform(-8, 1.2, -85, 5, 5, platformTex, false, 'normal', 'wreckage-A', true);
 
     // 6. Terzo bivio: Shadow (difficile) o Light (più facile ma devi trovarla)
-    addPlatform(-12, 1.5, -85, 3, 3, null, false, 'shadow', 'wreckage-B', true);
-    addPlatform(-4, 1.4, -88, 3, 3, platformTex, false, 'light-only', 'wreckage-C', true);
+    addPlatform(-16, 1.5, -75, 3, 3, null, false, 'shadow', 'wreckage-B', true);
+    addPlatform(-14, 1.4, -98, 3, 3, platformTex, false, 'light-only', 'wreckage-C', true);
 
     // 7. Salto finale verso l'esterno sinistro
-    addPlatform(-15, 1.8, -95, 4, 4, platformTex, false, 'normal', 'wreckage-A', true);
-    addPlatform(-20, 2.0, -106, 6, 6, platformTex, false, 'normal', 'wreckage-C', true); // Piattaforma grande finale
+    addPlatform(-24, 1.8, -78, 4, 4, platformTex, false, 'normal', 'wreckage-A', true);
+    addPlatform(-22, 2.0, -100, 6, 6, platformTex, false, 'normal', 'wreckage-C', true); 
+
+    addPlatform(-30, 0.8, -85, 3, 3, platformTex, true, 'normal', 'wreckage-B', true); // Moving
+    platforms[platforms.length - 1].userData.moveAxis = 'z';
+
+    addPlatform(-38, 1.0, -85, 4, 4, platformTex, false, 'normal', 'wreckage-A', true);
+    
+    addPlatform(-46, 1.2, -93, 4, 4, platformTex, false, 'light-only', 'wreckage-B', true);
+
+    addPlatform(-46, 3.5, -106, 6, 6, platformTex, true, 'normal', 'wreckage-C', true);
+    platforms[platforms.length - 1].userData.moveAxis = 'y';
+
+    addPlatform(-47, 5, -115, 6, 6, platformTex, false, 'normal', 'wreckage-A', false); // Piattaforma finale, non più "wobble zone" ma punto di arrivo
+
+
+    //piattaforme casuali per simulare un campo di detriti spaziali
+    addPlatform(-60, 8, -80, 3, 3, platformTex, true, 'normal', 'wreckage-A', true); // Moving
+    platforms[platforms.length - 1].userData.moveAxis = 'x';
+    addPlatform(30, 2, -50, 4, 4, platformTex, false, 'normal', 'wreckage-B', true);
+    addPlatform(-50, 6, -30, 5, 5, platformTex, false, 'normal', 'wreckage-C', true);
 
     // --- IL SOLE ---
 
@@ -1414,6 +1737,23 @@ function createWorld() {
     });
 
 
+    //satellite
+    loader.load('./models/Satellite.glb', (gltf) => {
+        const satellite = gltf.scene;
+        satellite.scale.set(2, 2, 2);
+        // Posizioniamo il satellite
+        satellite.position.set(-100, 0, 0);
+        // Rendiamo il modello capace di proiettare ombre
+        satellite.castShadow = true;
+        satellite.receiveShadow = true;
+        scene.add(satellite);
+
+        console.log("Modello caricato correttamente");
+    }, undefined, (error) => {
+        console.error("Errore nel caricamento del modello:", error);
+    });
+
+    //reattore
     loader.load('./models/Reactor.glb', (gltf) => {
         ReactorModel = gltf.scene;
     
@@ -1430,7 +1770,7 @@ function createWorld() {
 
 
         ReactorModel.rotation.y = Math.PI;
-        ReactorModel.position.set(-20, 2.5, -106);
+        ReactorModel.position.set(-47, 5.5, -115);
         scene.add(ReactorModel);
         console.log("Modello caricato correttamente");
     }, undefined, (error) => {
@@ -1760,9 +2100,10 @@ function addPlatform(x, y, z, w, d, texture, isMoving = false, type = 'normal', 
     let mat;
     if (type === 'shadow') {
         mat = new THREE.MeshStandardMaterial({ 
-            color: 0x000000, 
-            emissive: 0x0000ff, 
-            transparent: true 
+            map: texture,
+            metalness: 0.6,
+            roughness: 0.4,
+            opacity: 0
         });
     } else if (type === 'light-only') {
         mat = new THREE.MeshStandardMaterial({ 
@@ -1819,7 +2160,7 @@ function addPlatform(x, y, z, w, d, texture, isMoving = false, type = 'normal', 
         }
     }
 
-    // --- 4. DATI DI STATO (Intatti per il tuo animate) ---
+    // --- 4. DATI DI STATO ---
     plat.userData = {
         id: Math.random() * 100,
         isMoving: isMoving, 
@@ -1889,10 +2230,14 @@ function animate() {
                 const nextX = (plat.userData.startX || 0) + movement;
                 plat.userData.deltaX = nextX - plat.position.x;
                 plat.position.x = nextX;
-            } else {
+            } else if (plat.userData.moveAxis === 'z') {
                 const nextZ = (plat.userData.startZ || 0) + movement;
                 plat.userData.deltaZ = nextZ - plat.position.z;
                 plat.position.z = nextZ;
+            } else { 
+                const nextY = (plat.userData.startY || 0) + movement;
+                plat.userData.deltaY = nextY - plat.position.y;
+                plat.position.y = nextY;
             }
         }
 
@@ -1923,6 +2268,19 @@ function animate() {
             }
         }
     });
+
+    // 2. COLLISIONE DISCO SPECIFICA
+    // Assicurati di avere un riferimento a 'floorDisk' globale o accessibile
+    const onDisk = checkDiskCollision(player, floorDisk);
+    if (onDisk) {
+        onObject = true;
+    }
+
+    // 3. GRAVITÀ E SALTO (Usano onObject)
+    if (onObject) {
+        isJumping = false;
+        velocityY = 0;
+    }   
 
     // --- B. COLLISIONE MURI (Solo blocco laterale) ---
     walls.forEach(wall => {
@@ -2178,6 +2536,11 @@ function animate() {
             radarBlip.position.x = Math.cos(randomAngle) * randomRadius;
             radarBlip.position.y = Math.sin(randomAngle) * randomRadius;
         }
+    }
+
+    if (spoke1 && spoke2){
+        spoke1.rotation.x += 0.02;
+        spoke2.rotation.x += 0.02; // Ruota in senso opposto per un effetto più dinamico
     }
 
     updateSensors();
