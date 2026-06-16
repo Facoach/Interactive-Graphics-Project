@@ -113,3 +113,56 @@ canvas {
     50% { opacity: 1; }
     100% { opacity: 0.5; }
 }
+
+/* --- SCHERMATA DI VITTORIA (HUD FUTURISTICO) --- */
+#victory-screen {
+    display: none; /* Nascosta di default */
+    position: absolute;
+    top: 20%; /* Posizionata in alto come richiesto */
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    font-family: 'Courier New', Courier, monospace;
+    pointer-events: none; /* Impedisce che blocchi eventuali click mouse */
+    z-index: 2000; /* Deve stare sopra a tutto, anche alla UI della console */
+    
+    /* Animazione di glitch/accensione olografica quando appare */
+    animation: holo-power-on 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+.victory-title {
+    color: #00ffcc; /* Ciano fluo/hacker */
+    font-size: 54px;
+    font-weight: bold;
+    margin: 0;
+    letter-spacing: 8px;
+    text-transform: uppercase;
+    /* Effetto ologramma luminoso */
+    text-shadow: 
+        0 0 10px rgba(0, 255, 204, 0.8),
+        0 0 20px rgba(0, 255, 204, 0.5),
+        0 0 40px rgba(0, 153, 255, 0.5);
+}
+
+.victory-subtitle {
+    color: #e0f5ff;
+    font-size: 18px;
+    letter-spacing: 3px;
+    margin-top: 10px;
+    background-color: rgba(0, 30, 50, 0.7); /* Sfondino semi-trasparente */
+    padding: 8px 15px;
+    border-left: 4px solid #00ffcc;
+    border-right: 4px solid #00ffcc;
+    display: inline-block;
+    box-shadow: 0 0 15px rgba(0, 255, 204, 0.2);
+}
+
+/* Animazione di accensione (Flicker stile tubo catodico/ologramma) */
+@keyframes holo-power-on {
+    0%   { opacity: 0; transform: translate(-50%, -45%) scale(0.9); filter: blur(5px); }
+    30%  { opacity: 0.8; }
+    40%  { opacity: 0.2; }
+    50%  { opacity: 1; filter: blur(0px); }
+    60%  { opacity: 0.5; }
+    100% { opacity: 1; transform: translate(-50%, -50%) scale(1); filter: blur(0px); }
+}
