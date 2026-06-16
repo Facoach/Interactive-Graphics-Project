@@ -57,6 +57,7 @@ let consoleIndicator = null;         // Il flag visivo (!)
 let isConsoleScreenOpen = false;     // Stato della UI aperta/chiusa
 let hasInteractedWithConsole = false; // Controlla se è la prima volta che si legge
 
+let ReactorGroup = null; // Il gruppo che conterrà il modello del reattore, per poterlo rimuovere facilmente quando lo raccogliamo
 let ReactorModel = null;
 let isReactorPickedUp = false; // Ci serve per sapere se l'abbiamo già preso
 
@@ -65,6 +66,8 @@ let isReactorPlaced = false;// Stato del gioco
 
 let spoke1, spoke2; // I supporti dell'anello centrifuga
 let floorDisk; // Il disco del pavimento che si solleva
+
+let cinematicAngle = 0;
 
 
 const promptUI = document.getElementById('interaction-prompt');
@@ -351,6 +354,7 @@ function createSpaceshipExterior() {
     // Luce ambientale emessa dai motori
     const engineLight = new THREE.PointLight(0x00aaff, 5, 200);
     engineLight.position.set(-180, 4, 0);
+    engineLight.castShadow = true; // I motori proiettano ombre dinamiche
     shipGroup.add(engineLight);
 
 
@@ -755,6 +759,8 @@ function createSciFiCeiling() {
     });
     const ceilingBase = new THREE.Mesh(baseGeo, baseMat);
     ceilingBase.position.y = 0.25; // Lo alziamo a filo con il bordo inferiore
+    ceilingBase.castShadow = true;
+    ceilingBase.receiveShadow = true;
     ceilingGroup.add(ceilingBase);
 
     // 2. LE TRAVI INDUSTRIALI CON NEON
@@ -1151,6 +1157,9 @@ function createWorld() {
     });
     const giantWindow = new THREE.Mesh(glassGeo, glassMat);
     giantWindow.position.set(0, 4.0, 20.4); // Un millimetro davanti al muro posteriore per evitare bug visivi (z-fighting)
+    giantWindow.castShadow = true;
+    giantWindow.receiveShadow = true;
+    walls.push(giantWindow); // Aggiungiamo il vetro al sistema dei muri per le collisioni 
     scene.add(giantWindow);
 
 
@@ -1398,7 +1407,7 @@ function createWorld() {
     scene.add(player);
 
     // Caricamento Modello 3D
-    loader.load('./models/small_robot_corrected.glb', (gltf) => {
+    loader.load('./models/small_robot_corrected2.glb', (gltf) => {
         const model = gltf.scene;
     
         // Configurazione Modello
@@ -1755,6 +1764,8 @@ function createWorld() {
 
     //reattore
     loader.load('./models/Reactor.glb', (gltf) => {
+        ReactorGroup = new THREE.Group();
+        ReactorGroup.position.set(-47, 5.5, -115);
         ReactorModel = gltf.scene;
     
         // Configurazione Modello
@@ -1770,9 +1781,9 @@ function createWorld() {
 
 
         ReactorModel.rotation.y = Math.PI;
-        ReactorModel.position.set(-47, 5.5, -115);
-        scene.add(ReactorModel);
-        console.log("Modello caricato correttamente");
+        ReactorGroup.add(ReactorModel);
+        scene.add(ReactorGroup);
+        console.log("Modello reattore caricato correttamente");
     }, undefined, (error) => {
         console.error("Errore nel caricamento del modello:", error);
     });
@@ -2503,7 +2514,7 @@ function animate() {
         // Controlliamo se siamo vicini al bottone OPPURE alla console
         const isNearButton = buttonSwitch && player.position.distanceTo(buttonSwitch.position) < 3;
         const isNearConsole = scifiConsole && player.position.distanceTo(scifiConsole.position) < 4;
-        const isNearReactor = !isReactorPickedUp && ReactorModel && player.position.distanceTo(ReactorModel.position) < 2;
+        const isNearReactor = !isReactorPickedUp && ReactorGroup && player.position.distanceTo(ReactorGroup.position) < 2;
         const isNearPedestal = isReactorPickedUp && reactorPedestal && player.position.distanceTo(reactorPedestal.position) < 3;
         
         if (isNearButton || isNearConsole || isNearReactor || isNearPedestal) {
@@ -2543,6 +2554,39 @@ function animate() {
         spoke2.rotation.x += 0.02; // Ruota in senso opposto per un effetto più dinamico
     }
 
+    //animazione di vittoria
+    if (isReactorPlaced) {
+        // 1. Incrementiamo l'angolo nel tempo per far girare la camera.
+        // Cambia 0.01 per regolare la velocità di rotazione (più alto = più veloce)
+        cinematicAngle += 0.01; 
+
+        // 2. Calcoliamo le nuove coordinate X e Z locali per l'orbita circolare attorno a (0,0,0)
+        const newX = 5 * Math.sin(cinematicAngle);
+        const newZ = 5 * Math.cos(cinematicAngle);
+        
+        // 3. Aggiorniamo la posizione della camera
+        camera.position.set(newX, 2, newZ);
+
+        // 4. Forza la telecamera a guardare l'origine locale del gruppo player.
+        // Poiché model.position.y = 0.7, puntiamo leggermente più in alto (es. y=1) 
+        // per inquadrare il busto/testa del robot invece che i suoi piedi.
+        const targetLookAt = new THREE.Vector3(player.position.x, 1.0, player.position.z); 
+        camera.lookAt(targetLookAt);
+
+        //animazione braccia
+        const speed1 = 0.006; // Velocità dell'oscillazione
+        const time1 = Date.now() * speed1;
+        const amplitude1 = 0.7;
+        if (leftArm) leftArm.rotation.y = -1 - Math.sin(time1 + Math.PI) * amplitude1;
+        if (rightArm) rightArm.rotation.y = 1 - Math.sin(time1) * amplitude1; // Invertito
+
+        //ATTIVARE SCHERMATA VITTORIA
+
+        //impostiamo la disabilitazione dei comandi
+        isConsoleScreenOpen = true; // Blocca i comandi di movimento e salto
+        document.exitPointerLock();
+    }
+
     updateSensors();
     updateSpecialPlatforms();
     renderer.render(scene, camera);
@@ -2576,11 +2620,12 @@ function setupEventListeners() {
 
             // --- NUOVO: RACCOLTA REATTORE ---
             if (ReactorModel && !isReactorPickedUp) {
-                const distanceToReactor = player.position.distanceTo(ReactorModel.position);
+                const distanceToReactor = player.position.distanceTo(ReactorGroup.position);
                 
                 if (distanceToReactor < 2) {
                     isReactorPickedUp = true;
-                    scene.remove(ReactorModel); // Rimuove il modello 3D dal mondo
+                    isReactorPlaced = false; 
+                    scene.remove(ReactorGroup); // Rimuove il modello 3D dal mondo
                     
                     console.log("Reattore raccolto con successo!");
                     
@@ -2588,6 +2633,11 @@ function setupEventListeners() {
                     const promptUI = document.getElementById('interaction-prompt');
                     if (promptUI) promptUI.style.display = 'none';
                     
+                    //aggiorna indicatore console
+                    if (consoleIndicator) {
+                        ReactorGroup.remove(consoleIndicator);
+                        reactorPedestal.add(consoleIndicator);
+                    }
                     return; // "return" ferma la funzione. Così non premi per sbaglio anche il bottone se fosse vicino
                 }
             }
@@ -2596,10 +2646,15 @@ function setupEventListeners() {
             if (reactorPedestal && isReactorPickedUp) {
                 const distanceToPedestal = player.position.distanceTo(reactorPedestal.position);
                 
-                if (distanceToPedestal < 2) {
+                if (distanceToPedestal < 3) {
                     isReactorPickedUp = false;
-                    ReactorModel.position.set(reactorPedestal.position.x, reactorPedestal.position.y + 2.5, reactorPedestal.position.z);
-                    scene.add(ReactorModel); // aggiunge il modello 3D al piedistallo
+                    isReactorPlaced = true;
+                    //rimuovi indicatore console
+                    if (consoleIndicator) {
+                        reactorPedestal.remove(consoleIndicator);
+                    }
+                    ReactorGroup.position.set(reactorPedestal.position.x, reactorPedestal.position.y + 2.5, reactorPedestal.position.z);
+                    scene.add(ReactorGroup); // aggiunge il modello 3D al piedistallo
                     
                     console.log("Reattore collocato con successo!");
                     
@@ -2624,9 +2679,7 @@ function setupEventListeners() {
                         hasInteractedWithConsole = true;
                         if (consoleIndicator) {
                             scifiConsole.remove(consoleIndicator);
-                            consoleIndicator.geometry.dispose();
-                            consoleIndicator.material.dispose();
-                            consoleIndicator = null;
+                            ReactorGroup.add(consoleIndicator);
                         }
                     }
                 } else {
