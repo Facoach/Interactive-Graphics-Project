@@ -71,6 +71,7 @@ let cinematicAngle = 0;
 
 
 const promptUI = document.getElementById('interaction-prompt');
+const victoryUI = document.getElementById('victory-screen');
 
 // Funzione Init
 function init() {
@@ -439,7 +440,6 @@ function createSpaceshipExterior() {
     const rightImpulseGlow = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.6, 7.6), engineGlowMat);
     rightImpulseGlow.position.set(40, 17.5, -8);
     bowGroup.add(rightImpulseGlow);
-
     // Aggiungiamo tutta la prua al gruppo principale
     shipGroup.add(bowGroup);
 
@@ -2662,6 +2662,15 @@ function setupEventListeners() {
                     const promptUI = document.getElementById('interaction-prompt');
                     if (promptUI) promptUI.style.display = 'none';
                     
+
+                    //propmpt di vittoria, va qui e non in animate perchè deve apparire una sola volta
+                    if (victoryUI) victoryUI.style.display = 'block';
+
+                    // Nascondi la legenda dei comandi (non servono più)
+                    const legendUI = document.getElementById('controls-legend');
+                    if (legendUI) legendUI.style.display = 'none';
+
+
                     return; // "return" ferma la funzione. Così non premi per sbaglio anche il bottone se fosse vicino
                 }
             }
